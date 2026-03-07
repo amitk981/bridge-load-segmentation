@@ -1,0 +1,1803 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bridge Load Segmentation & STAAD.Pro Automation</title>
+    <meta name="description"
+        content="Automated bridge load segmentation and STAAD.Pro member load export tool for structural engineers">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <!-- Header -->
+    <header class="app-header">
+        <div class="header-brand">
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <rect x="2" y="20" width="28" height="4" rx="1" fill="#00D4FF" />
+                    <rect x="4" y="8" width="4" height="12" rx="1" fill="#00D4FF" opacity="0.7" />
+                    <rect x="14" y="8" width="4" height="12" rx="1" fill="#00D4FF" opacity="0.7" />
+                    <rect x="24" y="8" width="4" height="12" rx="1" fill="#00D4FF" opacity="0.7" />
+                    <rect x="2" y="24" width="28" height="4" rx="1" fill="#0088AA" />
+                </svg>
+            </div>
+            <div>
+                <h1>Bridge Load Segmentation</h1>
+                <p class="subtitle">STAAD.Pro Load-Distance Automation Tool</p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-ghost" onclick="saveProject()" title="Save Project">
+                <span class="btn-icon">💾</span> Save
+            </button>
+            <button class="btn btn-ghost" onclick="document.getElementById('load-project-input').click()"
+                title="Load Project">
+                <span class="btn-icon">📂</span> Load
+            </button>
+            <input type="file" id="load-project-input" accept=".json" style="display:none"
+                onchange="loadProject(event)">
+        </div>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="guide" onclick="switchTab('guide')">
+            <span class="tab-icon">📖</span> User Guide
+        </button>
+        <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">
+            <span class="tab-icon">⚙️</span> Project Settings
+        </button>
+        <button class="tab-btn" data-tab="geometry" onclick="switchTab('geometry')">
+            <span class="tab-icon">📐</span> Geometry / Members
+        </button>
+        <button class="tab-btn" data-tab="loads" onclick="switchTab('loads')">
+            <span class="tab-icon">⬇️</span> Loads
+        </button>
+        <button class="tab-btn" data-tab="results" onclick="switchTab('results')">
+            <span class="tab-icon">📊</span> Results
+        </button>
+        <button class="tab-btn" data-tab="staad" onclick="switchTab('staad')">
+            <span class="tab-icon">📝</span> STAAD Export
+        </button>
+        <button class="tab-btn" data-tab="excel" onclick="switchTab('excel')">
+            <span class="tab-icon">📗</span> Excel Export
+        </button>
+        <button class="tab-btn" data-tab="smart" onclick="switchTab('smart')">
+            <span class="tab-icon">🧠</span> Smart Tools
+        </button>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+        <!-- ═══ USER GUIDE TAB ═══ -->
+        <section id="tab-guide" class="tab-panel active">
+
+            <!-- Quick Start -->
+            <div class="card guide-card">
+                <h2 class="card-title">🚀 Quick Start — For Practicing Structural Engineers</h2>
+                <p class="card-desc">This tool automates the tedious manual calculation of <strong>partial load
+                        overlap</strong> across bridge deck strips / STAAD members. Instead of hand-calculating d1/d2
+                    distances for every member-load pair, you define members and loads once — the engine computes all
+                    overlaps, generates STAAD.Pro <code>MEMBER LOAD UNI</code> / <code>LIN</code> commands, and exports
+                    to Excel.</p>
+
+                <div class="guide-steps">
+                    <div class="guide-step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h3>Project Settings</h3>
+                            <p>Set bridge/culvert width, structure type, fill depth, units</p>
+                        </div>
+                    </div>
+                    <div class="guide-step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3>Define Members</h3>
+                            <p>Auto-divide width into equal strips, or define manually</p>
+                        </div>
+                    </div>
+                    <div class="guide-step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3>Define Loads</h3>
+                            <p>Add loads manually or use IRC/culvert templates</p>
+                        </div>
+                    </div>
+                    <div class="guide-step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h3>Calculate</h3>
+                            <p>Engine computes d1/d2 for every overlap pair</p>
+                        </div>
+                    </div>
+                    <div class="guide-step">
+                        <div class="step-number">5</div>
+                        <div class="step-content">
+                            <h3>Export</h3>
+                            <p>Copy STAAD text, download Excel, or save project</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- What Problem This Solves -->
+            <div class="card guide-card">
+                <h2 class="card-title">🎯 What Problem Does This Solve?</h2>
+                <div class="guide-problem">
+                    <div class="problem-before">
+                        <h3 class="problem-heading problem-red">❌ Without This Tool (Manual Method)</h3>
+                        <ul>
+                            <li>Engineer divides bridge width into 10-20 strips in STAAD</li>
+                            <li>For each IRC vehicle position, <strong>manually calculates</strong> which strips are
+                                loaded</li>
+                            <li>For each loaded strip, calculates d1 (distance from member start to load start) and d2
+                                (distance from member start to load end)</li>
+                            <li>For 12 members × 4 load positions = <strong>48 manual calculations</strong></li>
+                            <li>High risk of transcription errors → <strong>unsafe design or over-design</strong></li>
+                        </ul>
+                    </div>
+                    <div class="problem-after">
+                        <h3 class="problem-heading problem-green">✅ With This Tool (Automated)</h3>
+                        <ul>
+                            <li>Define members once → auto-generate equal strips</li>
+                            <li>Click IRC template → loads auto-populated per IRC 6:2017</li>
+                            <li>Click Calculate → all d1/d2 computed <strong>instantly</strong></li>
+                            <li>Copy STAAD commands → paste directly into STAAD.Pro editor</li>
+                            <li>Excel export for documentation / checking / client submission</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab-by-Tab Guide -->
+            <div class="card guide-card">
+                <h2 class="card-title">📋 Detailed Tab-by-Tab Guide</h2>
+
+                <!-- Settings Guide -->
+                <div class="guide-section">
+                    <h3 class="guide-section-title">⚙️ Tab 1: Project Settings</h3>
+                    <p class="guide-section-desc">Configure the basic parameters of your structure before defining
+                        geometry and loads.</p>
+
+                    <table class="guide-table">
+                        <thead>
+                            <tr>
+                                <th>Field</th>
+                                <th>What It Controls</th>
+                                <th>Typical Values</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Structure Type</strong></td>
+                                <td>Determines available member groups. Bridge Deck = only top slab strips. Box Culvert
+                                    = top slab + walls + base slab with configurable cell count.</td>
+                                <td>Bridge Deck (NH/SH), Box Culvert 1-Cell (minor crossings)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Total Width</strong></td>
+                                <td>Overall width to be divided into strips. For bridge deck = carriageway + kerb +
+                                    footpath. For box culvert = outer-to-outer width.</td>
+                                <td>7.5m (single lane), 8.5m (2-lane), 12m (4-lane)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Reference Axis</strong></td>
+                                <td>Where positions are measured from. Left Edge = most common for structural loading.
+                                    Centerline = useful for symmetrical analysis.</td>
+                                <td>Left Edge (default for STAAD models)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Fill Depth</strong></td>
+                                <td>Earth fill depth above top slab. Used to calculate live load dispersion (45° method
+                                    per IRC 112) and earth fill dead load. <strong>Set to 0 for bridge decks with no
+                                        fill.</strong></td>
+                                <td>0m (bridge deck), 0.5-3m (box culvert)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Culvert Height</strong></td>
+                                <td>Height of culvert walls. Used for earth pressure and water pressure template
+                                    calculations. Not needed for bridge decks.</td>
+                                <td>2-5m typical for culverts</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Decimal Precision</strong></td>
+                                <td>Number of decimal places in d1/d2 calculations and STAAD export. <strong>Use 2 for
+                                        meters, 0 for millimeters.</strong></td>
+                                <td>2 (meters), 0 (mm)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Overhang Policy</strong></td>
+                                <td>What happens if a load extends beyond the bridge width. <strong>Allow</strong> =
+                                    calculates overlap for the portion within width. <strong>Reject</strong> = blocks
+                                    calculation. <strong>Clip</strong> = silently trims.</td>
+                                <td>Allow (for dispersed loads that spread beyond edges)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Geometry Guide -->
+                <div class="guide-section">
+                    <h3 class="guide-section-title">📐 Tab 2: Geometry / Members</h3>
+                    <p class="guide-section-desc">Define how the bridge or culvert width is divided into STAAD member
+                        strips. Each strip = one STAAD beam/plate element in the transverse direction.</p>
+
+                    <div class="guide-callout guide-callout-info">
+                        <strong>💡 Engineering Context:</strong> In STAAD grillage analysis, bridge decks are modeled as
+                        a grid of longitudinal and transverse beams. The transverse beams represent strips across the
+                        width. This tool computes which portion of each transverse strip receives load.
+                    </div>
+
+                    <table class="guide-table">
+                        <thead>
+                            <tr>
+                                <th>Column</th>
+                                <th>Meaning</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Member ID</strong></td>
+                                <td>The STAAD member number. Must match your STAAD model exactly.</td>
+                                <td>e.g., 1001, 1002, ... Match your STAAD file!</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Start (m)</strong></td>
+                                <td>Position of the member's left boundary, measured from reference axis (usually left
+                                    edge = 0).</td>
+                                <td>First member typically starts at 0.0</td>
+                            </tr>
+                            <tr>
+                                <td><strong>End (m)</strong></td>
+                                <td>Position of the member's right boundary. <code>End - Start = member width</code>.
+                                </td>
+                                <td>Last member ends at Total Width</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Group</strong></td>
+                                <td>For box culverts: which structural element this strip belongs to. Top Slab, Bottom
+                                    Slab, Left Wall, Right Wall, or Middle Wall.</td>
+                                <td>"General" for bridge decks</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="guide-callout guide-callout-warning">
+                        <strong>⚠️ Critical Check:</strong> Member boundaries must be contiguous and non-overlapping.
+                        Verify that <code>Member[i].End = Member[i+1].Start</code> for all adjacent pairs. Gaps or
+                        overlaps will produce incorrect d1/d2 values.
+                    </div>
+                </div>
+
+                <!-- Loads Guide -->
+                <div class="guide-section">
+                    <h3 class="guide-section-title">⬇️ Tab 3: Loads</h3>
+                    <p class="guide-section-desc">Define all transverse loads acting across the bridge width. Each load
+                        has a start and end position (measured from the same reference axis as members) and an
+                        intensity.</p>
+
+                    <table class="guide-table">
+                        <thead>
+                            <tr>
+                                <th>Column</th>
+                                <th>Meaning</th>
+                                <th>Critical Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Load ID</strong></td>
+                                <td>Unique identifier for traceability in outputs</td>
+                                <td>Use descriptive IDs: AA_T1, 70R_T2, EP_LEFT</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Case</strong></td>
+                                <td>Load case grouping. Loads in the same case are exported under one
+                                    <code>LOAD n</code> block in STAAD.
+                                </td>
+                                <td>LC1 = Live, LC2 = Earth, LC3 = Water ...</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Start / End</strong></td>
+                                <td>Transverse position of the load's left and right edges, using same reference as
+                                    members.</td>
+                                <td><strong>Must use same units and same datum as members.</strong></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Intensity</strong></td>
+                                <td>Load intensity in kN/m (for UNI) or kN/m² (per meter span). <strong>Negative =
+                                        downward</strong> for GY direction (gravity loads).</td>
+                                <td>IRC AA: -97.22 kN/m, 70R: -76.59 kN/m</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Int. End</strong></td>
+                                <td>For trapezoidal loads only (e.g., earth pressure, water pressure). If blank →
+                                    uniform load (UNI). If filled → trapezoidal (LIN).</td>
+                                <td>Earth pressure: 0 at top, K₀γH at bottom</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Direction</strong></td>
+                                <td>STAAD global direction. GY = vertical, GX = horizontal (earth/water pressure on
+                                    walls), GZ = longitudinal (braking).</td>
+                                <td>98% of cases use GY for top slab loads</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h4 style="margin-top:20px; color: var(--accent);">IRC Live Load Templates (Auto-populated per IRC
+                        6:2017)</h4>
+                    <table class="guide-table">
+                        <thead>
+                            <tr>
+                                <th>Template</th>
+                                <th>Total Load</th>
+                                <th>Track/Wheel</th>
+                                <th>CTC</th>
+                                <th>Kerb Clearance</th>
+                                <th>Intensity per Track</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Class AA Tracked</strong></td>
+                                <td>700 kN (2 × 350)</td>
+                                <td>0.85m W × 3.6m L</td>
+                                <td>2.05m</td>
+                                <td>1.2m min</td>
+                                <td>−97.22 kN/m</td>
+                            </tr>
+                            <tr>
+                                <td><strong>70R Tracked</strong></td>
+                                <td>700 kN (2 × 350)</td>
+                                <td>0.84m W × 4.57m L</td>
+                                <td>2.06m</td>
+                                <td>1.2m min</td>
+                                <td>−76.59 kN/m</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Class A Wheel Line</strong></td>
+                                <td>114 kN heaviest axle</td>
+                                <td>0.25m W × 0.50m L</td>
+                                <td>1.80m</td>
+                                <td>0.15m min</td>
+                                <td>−228.00 kN/m</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="guide-callout guide-callout-warning">
+                        <strong>⚠️ Sign Convention Check:</strong> STAAD.Pro treats <strong>negative GY =
+                            downward</strong> (gravity direction). All gravity loads (dead, live, earth fill) must have
+                        <strong>negative intensity</strong>. Lateral earth pressure on walls uses GX and is typically
+                        <strong>positive</strong> (outward push).
+                    </div>
+                </div>
+
+                <!-- Results Guide -->
+                <div class="guide-section">
+                    <h3 class="guide-section-title">📊 Tab 4: Results</h3>
+                    <p class="guide-section-desc">Shows the computed overlaps between each load and each member strip.
+                        The key outputs are <strong>d1 (front distance)</strong> and <strong>d2 (back distance)</strong>
+                        — these map directly to STAAD.Pro's <code>MEMBER LOAD UNI dir f1 d1 d2</code> syntax.</p>
+
+                    <div class="guide-callout guide-callout-info">
+                        <strong>💡 d1 and d2 Explained:</strong><br>
+                        <code
+                            style="display:block; margin:8px 0; padding:12px; background:rgba(0,0,0,0.3); border-radius:4px; font-size:13px;">
+                        Member: |——————————————————————|<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;←——d1——→|■■■ LOAD ■■■|←(member end)—→<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;←———————d2————————→<br><br>
+                        d1 = distance from member START to where load BEGINS on this member<br>
+                        d2 = distance from member START to where load ENDS on this member<br>
+                        Loaded length = d2 − d1<br><br>
+                        STAAD syntax: &lt;member_id&gt; UNI GY &lt;intensity&gt; &lt;d1&gt; &lt;d2&gt;
+                        </code>
+                    </div>
+
+                    <table class="guide-table">
+                        <thead>
+                            <tr>
+                                <th>Column</th>
+                                <th>What It Means</th>
+                                <th>QA Check</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>d1 (Front)</strong></td>
+                                <td>Distance from member start to overlap start</td>
+                                <td>Must be ≥ 0</td>
+                            </tr>
+                            <tr>
+                                <td><strong>d2 (Back)</strong></td>
+                                <td>Distance from member start to overlap end</td>
+                                <td>Must be > d1 and ≤ member width</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Loaded Length</strong></td>
+                                <td>d2 − d1 = actual loaded portion on this member</td>
+                                <td>Sum across all members for one load = total load span ∩ bridge width</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Format (UNI/LIN)</strong></td>
+                                <td>UNI = uniform load; LIN = trapezoidal (linearly varying intensity)</td>
+                                <td>LIN used for earth/water pressure on walls</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="guide-callout guide-callout-danger">
+                        <strong>🔴 CRITICAL VERIFICATION:</strong> Before using results in production, always verify:
+                        <ol style="margin:8px 0 0 20px; line-height:2;">
+                            <li><strong>Sum check:</strong> Σ(loaded_length) across all members for one load ≈ load
+                                span. If not, some load falls outside the bridge.</li>
+                            <li><strong>Boundary check:</strong> d1 and d2 must be non-negative and d2 ≤ member width.
+                            </li>
+                            <li><strong>Intensity sign:</strong> Gravity loads must show negative values for GY
+                                direction.</li>
+                            <li><strong>No missing members:</strong> Total affected members should match visual
+                                inspection of which strips are under the load.</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- STAAD Export Guide -->
+                <div class="guide-section">
+                    <h3 class="guide-section-title">📝 Tab 5: STAAD Export</h3>
+                    <p class="guide-section-desc">Generates ready-to-paste STAAD.Pro member load commands. Copy the text
+                        and paste directly into STAAD.Pro's command file editor (or use "File → Import" in STAAD).</p>
+
+                    <div class="guide-callout guide-callout-info">
+                        <strong>💡 STAAD.Pro Command Format:</strong>
+                        <code
+                            style="display:block; margin:8px 0; padding:12px; background:rgba(0,0,0,0.3); border-radius:4px; font-size:13px;">
+                        ; ─── Uniform load (UNI) ───<br>
+                        1003 UNI GY -76.60 0.68 0.70<br>
+                        ; Member 1003, uniform, direction GY, intensity -76.60, from d1=0.68 to d2=0.70<br><br>
+                        ; ─── Trapezoidal load (LIN) ───<br>
+                        2001 LIN GX 0.00 18.00 0.00 3.00<br>
+                        ; Member 2001, linear, GX, w1=0 at d1=0, w2=18 at d2=3.0<br>
+                        ; (Earth pressure: 0 at top, 18 kN/m² at 3m depth)
+                        </code>
+                    </div>
+
+                    <div class="guide-callout guide-callout-warning">
+                        <strong>⚠️ Before Pasting into STAAD:</strong>
+                        <ul style="margin:8px 0 0 16px; line-height:2;">
+                            <li>Verify the member IDs match your STAAD model exactly</li>
+                            <li>Confirm the load directions are correct (GY for slabs, GX for walls)</li>
+                            <li>Check that your STAAD model uses the same units as this tool</li>
+                            <li>Both d1 and d2 are measured from the <strong>member start node</strong>, not from the
+                                member center</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Excel Guide -->
+                <div class="guide-section">
+                    <h3 class="guide-section-title">📗 Tab 6: Excel Export</h3>
+                    <p class="guide-section-desc">Generates a professional, multi-sheet workbook for documentation, QA
+                        review, and client submission.</p>
+
+                    <table class="guide-table">
+                        <thead>
+                            <tr>
+                                <th>Sheet</th>
+                                <th>Contents</th>
+                                <th>Purpose</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Project_Info</td>
+                                <td>All project settings and metadata</td>
+                                <td>Traceability — who, what, when</td>
+                            </tr>
+                            <tr>
+                                <td>Members</td>
+                                <td>Complete member strip table</td>
+                                <td>Geometry verification</td>
+                            </tr>
+                            <tr>
+                                <td>Loads</td>
+                                <td>All load definitions with types and intensities</td>
+                                <td>Loading verification</td>
+                            </tr>
+                            <tr>
+                                <td>Overlap_Calculations</td>
+                                <td>Full results: d1, d2, loaded length, intensities</td>
+                                <td>Core calculation record</td>
+                            </tr>
+                            <tr>
+                                <td>STAAD_Export</td>
+                                <td>Formatted STAAD commands</td>
+                                <td>Copy-paste backup</td>
+                            </tr>
+                            <tr>
+                                <td>Summary</td>
+                                <td>QA statistics per load and per case</td>
+                                <td>Quick sanity check</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Formulas & Standards Reference -->
+            <div class="card guide-card">
+                <h2 class="card-title">📐 Engineering Formulas & Standards Used</h2>
+
+                <div class="guide-section">
+                    <h3 class="guide-section-title">Core Overlap Algorithm</h3>
+                    <code
+                        style="display:block; margin:8px 0; padding:16px; background:rgba(0,0,0,0.3); border-radius:4px; font-size:13px; line-height:2;">
+                    overlap_start = max(member.start, load.start)<br>
+                    overlap_end &nbsp; = min(member.end, load.end)<br>
+                    <br>
+                    if overlap_start &lt; overlap_end &nbsp;→ overlap exists<br>
+                    &nbsp;&nbsp;d1 = overlap_start − member.start &nbsp;&nbsp;&nbsp;(front distance for STAAD)<br>
+                    &nbsp;&nbsp;d2 = overlap_end &nbsp; − member.start &nbsp;&nbsp;&nbsp;(back distance for STAAD)<br>
+                    &nbsp;&nbsp;loaded_length = d2 − d1
+                    </code>
+                </div>
+
+                <div class="guide-section">
+                    <h3 class="guide-section-title">Live Load Dispersion Through Fill (IRC 112, Clause 9.3)</h3>
+                    <code
+                        style="display:block; margin:8px 0; padding:16px; background:rgba(0,0,0,0.3); border-radius:4px; font-size:13px; line-height:2;">
+                    b_eff = b_contact + 2 × H_fill × tan(45°)<br>
+                    b_eff = b_contact + 2 × H_fill &nbsp;&nbsp;&nbsp;(for 45° angle)<br>
+                    <br>
+                    Dispersed intensity = Original intensity × (b_contact / b_eff)<br>
+                    Total force is conserved: F = intensity × width = constant
+                    </code>
+                </div>
+
+                <div class="guide-section">
+                    <h3 class="guide-section-title">Lateral Earth Pressure (IRC 112 / IS 456)</h3>
+                    <code
+                        style="display:block; margin:8px 0; padding:16px; background:rgba(0,0,0,0.3); border-radius:4px; font-size:13px; line-height:2;">
+                    P(h) = K₀ × γ_soil × h &nbsp;&nbsp;&nbsp;(varies linearly with depth)<br>
+                    K₀ = 1 − sin(φ) ≈ 0.5 &nbsp;&nbsp;&nbsp;(at-rest, φ = 30° typical)<br>
+                    <br>
+                    At top (h=0): P = 0 kN/m²<br>
+                    At bottom (h=H): P = K₀ × γ × H = 0.5 × 18 × 3 = 27 kN/m²<br>
+                    <br>
+                    STAAD: member LIN GX 0.00 27.00 0.00 3.00
+                    </code>
+                </div>
+
+                <div class="guide-section">
+                    <h3 class="guide-section-title">Applicable Codes</h3>
+                    <table class="guide-table">
+                        <thead>
+                            <tr>
+                                <th>Code</th>
+                                <th>Scope</th>
+                                <th>Key Clauses Used</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>IRC 6:2017</strong></td>
+                                <td>Live loads, impact factors, braking</td>
+                                <td>Annex A (vehicle configs), Cl. 204-211</td>
+                            </tr>
+                            <tr>
+                                <td><strong>IRC 112:2020</strong></td>
+                                <td>RCC design, 45° dispersion</td>
+                                <td>Cl. 9.3 (load dispersion through fill)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>IRC 78:2014</strong></td>
+                                <td>Foundation & substructure</td>
+                                <td>Safety factors, bearing capacity</td>
+                            </tr>
+                            <tr>
+                                <td><strong>IRC 122:2017</strong></td>
+                                <td>Precast segmental box culverts</td>
+                                <td>Manufacturing, joints, shear keys</td>
+                            </tr>
+                            <tr>
+                                <td><strong>IS 456:2000</strong></td>
+                                <td>General RCC design</td>
+                                <td>Earth pressure coefficients, material props</td>
+                            </tr>
+                            <tr>
+                                <td><strong>AASHTO LRFD</strong></td>
+                                <td>Load factors (international ref)</td>
+                                <td>Strength I: DC×1.25, LL×1.75, EH×1.35</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- IRC Load Factors Reference -->
+            <div class="card guide-card">
+                <h2 class="card-title">📊 IRC 6:2017 — Partial Safety Factors for Load Combinations</h2>
+                <p class="card-desc">These factors are applied in STAAD.Pro load combinations. This tool generates
+                    <strong>unfactored</strong> load intensities — you apply factors in STAAD.Pro's
+                    <code>LOAD COMBINATION</code> section.
+                </p>
+
+                <div class="guide-section">
+                    <h3 class="guide-section-title">Ultimate Limit State (ULS) — Table B.2</h3>
+                    <table class="guide-table">
+                        <thead>
+                            <tr>
+                                <th>Load Type</th>
+                                <th>Adding to Effect</th>
+                                <th>Relieving Effect</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Dead Load (DL)</strong></td>
+                                <td>1.35</td>
+                                <td>1.00</td>
+                                <td>Self-weight + SIDL</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Earth Fill (SIDL)</strong></td>
+                                <td>1.35</td>
+                                <td>1.00</td>
+                                <td>γ_soil × fill_depth</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Wearing Course (WC)</strong></td>
+                                <td>1.75</td>
+                                <td>—</td>
+                                <td>Superimposed dead load</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Live Load (LL) — Leading</strong></td>
+                                <td>1.50</td>
+                                <td>—</td>
+                                <td>IRC Class AA / 70R / A</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Live Load — Accompanying</strong></td>
+                                <td>1.15</td>
+                                <td>—</td>
+                                <td>When not the primary variable</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Earth Pressure (EP)</strong></td>
+                                <td>1.50</td>
+                                <td>1.00</td>
+                                <td>At-rest: K₀γh</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Live Load Surcharge (SC)</strong></td>
+                                <td>1.20</td>
+                                <td>—</td>
+                                <td>qK₀ on walls</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Water Pressure (WP)</strong></td>
+                                <td>1.00</td>
+                                <td>1.00</td>
+                                <td>Hydrostatic γ_w × h</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Temperature Gradient</strong></td>
+                                <td>1.00 (leading) / 0.60 (acc.)</td>
+                                <td>—</td>
+                                <td>Differential expansion</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="guide-section">
+                    <h3 class="guide-section-title">Serviceability Limit State (SLS) — Table B.3</h3>
+                    <table class="guide-table">
+                        <thead>
+                            <tr>
+                                <th>Load Type</th>
+                                <th>Rare</th>
+                                <th>Frequent</th>
+                                <th>Quasi-permanent</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Dead Load</strong></td>
+                                <td>1.00</td>
+                                <td>1.00</td>
+                                <td>1.00</td>
+                            </tr>
+                            <tr>
+                                <td><strong>LL — Leading</strong></td>
+                                <td>1.00</td>
+                                <td>0.75</td>
+                                <td>0.00</td>
+                            </tr>
+                            <tr>
+                                <td><strong>LL — Accompanying</strong></td>
+                                <td>0.75</td>
+                                <td>0.20</td>
+                                <td>0.00</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Earth Pressure</strong></td>
+                                <td>1.00</td>
+                                <td>1.00</td>
+                                <td>1.00</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Temperature</strong></td>
+                                <td>0.60</td>
+                                <td>0.50</td>
+                                <td>0.50</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="guide-callout guide-callout-warning">
+                        <strong>⚠️ Note:</strong> These factors are for reference. Always verify against the latest IRC
+                        6 amendment. Impact factors (Cl. 208) must be applied as a multiplier on live load intensity
+                        <strong>before</strong> entering values into this tool, or as a separate factor in STAAD load
+                        combinations. Impact is generally not considered when fill depth > 600mm.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Box Culvert Design Workflow -->
+            <div class="card guide-card">
+                <h2 class="card-title">🏗️ Box Culvert — Complete Design Workflow Using This Tool</h2>
+                <p class="card-desc">A step-by-step guide for structural engineers designing RCC box culverts. This tool
+                    handles <strong>Steps 4-5</strong> (load distribution and STAAD input generation).</p>
+
+                <div class="guide-section">
+                    <h3 class="guide-section-title">Design Workflow Checklist</h3>
+                    <table class="guide-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Step</th>
+                                <th>This Tool?</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>1</td>
+                                <td><strong>Hydraulic Design</strong></td>
+                                <td>❌ External</td>
+                                <td>Waterway area, HFL, scour depth, velocity check per IRC SP:13</td>
+                            </tr>
+                            <tr>
+                                <td>2</td>
+                                <td><strong>Preliminary Sizing</strong></td>
+                                <td>❌ External</td>
+                                <td>Clear span, cell dimensions, wall/slab thickness per IS 456 span-depth ratios</td>
+                            </tr>
+                            <tr>
+                                <td>3</td>
+                                <td><strong>STAAD Modeling</strong></td>
+                                <td>❌ STAAD.Pro</td>
+                                <td>Create 2D frame or 3D plate model, define nodes, elements, supports</td>
+                            </tr>
+                            <tr>
+                                <td>4</td>
+                                <td><strong>Load Distribution</strong></td>
+                                <td>✅ <strong>THIS TOOL</strong></td>
+                                <td>Define members, apply IRC templates, compute d1/d2 for all overlaps</td>
+                            </tr>
+                            <tr>
+                                <td>5</td>
+                                <td><strong>STAAD Load Input</strong></td>
+                                <td>✅ <strong>THIS TOOL</strong></td>
+                                <td>Generate MEMBER LOAD UNI/LIN commands, paste into STAAD</td>
+                            </tr>
+                            <tr>
+                                <td>6</td>
+                                <td><strong>Load Combinations</strong></td>
+                                <td>❌ STAAD.Pro</td>
+                                <td>Apply ULS/SLS factors per IRC 6:2017 Table B.2/B.3</td>
+                            </tr>
+                            <tr>
+                                <td>7</td>
+                                <td><strong>Analysis</strong></td>
+                                <td>❌ STAAD.Pro</td>
+                                <td>Run analysis, extract BM/SF/AF envelopes</td>
+                            </tr>
+                            <tr>
+                                <td>8</td>
+                                <td><strong>Design</strong></td>
+                                <td>❌ STAAD/Manual</td>
+                                <td>Reinforcement design per IRC 112 / IS 456</td>
+                            </tr>
+                            <tr>
+                                <td>9</td>
+                                <td><strong>Detailing</strong></td>
+                                <td>❌ External</td>
+                                <td>BBS, quantity estimation, drawing preparation</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="guide-section">
+                    <h3 class="guide-section-title">Critical Load Cases for Box Culvert</h3>
+                    <p class="guide-section-desc">Engineers must analyze all these cases. Use this tool to generate
+                        STAAD loads for <strong>each case separately</strong> by changing load case IDs (LC1, LC2,
+                        etc.).</p>
+                    <table class="guide-table">
+                        <thead>
+                            <tr>
+                                <th>Case</th>
+                                <th>Top Slab</th>
+                                <th>Walls</th>
+                                <th>Base Slab</th>
+                                <th>Governs For</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Case 1: Box Empty</strong><br>DL + EP + LL (no water)</td>
+                                <td>SW + Fill DL + WC + LL</td>
+                                <td>EP (both sides)</td>
+                                <td>SW + Soil reaction</td>
+                                <td>Max hogging at top slab supports</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Case 2: Box Full</strong><br>DL + EP + WP + LL</td>
+                                <td>SW + Fill DL + WC + LL</td>
+                                <td>EP − WP (net lateral)</td>
+                                <td>SW + WP uplift + Soil reaction</td>
+                                <td>Max sagging at mid-span, reduced wall moments</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Case 3: One Side EP</strong><br>Asymmetric backfill</td>
+                                <td>SW + Fill DL + WC + LL</td>
+                                <td>EP one side only</td>
+                                <td>SW + Eccentric reaction</td>
+                                <td>Lateral sway, torsion in base</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Case 4: Live Load Only</strong><br>(for impact study)</td>
+                                <td>LL with impact factor</td>
+                                <td>LL surcharge</td>
+                                <td>LL subgrade reaction</td>
+                                <td>Dynamic amplification check</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="guide-section">
+                    <h3 class="guide-section-title">All Load Types for Box Culvert Design</h3>
+                    <p class="guide-section-desc">Complete list of loads a civil engineer must consider. Loads marked
+                        with ✅ can be generated using this tool's templates.</p>
+                    <table class="guide-table">
+                        <thead>
+                            <tr>
+                                <th>Load</th>
+                                <th>Tool Support</th>
+                                <th>On Which Element</th>
+                                <th>Type</th>
+                                <th>Formula / Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Self-weight</td>
+                                <td>❌ STAAD auto</td>
+                                <td>All elements</td>
+                                <td>UNI (auto)</td>
+                                <td>STAAD: <code>SELFWEIGHT Y -1.0</code></td>
+                            </tr>
+                            <tr>
+                                <td>Earth fill on top slab</td>
+                                <td>✅ Fill DL button</td>
+                                <td>Top slab</td>
+                                <td>UNI GY</td>
+                                <td>P = −γ × H_fill</td>
+                            </tr>
+                            <tr>
+                                <td>Wearing course</td>
+                                <td>✅ WC DL button</td>
+                                <td>Top slab</td>
+                                <td>UNI GY</td>
+                                <td>P = −γ_asphalt × t</td>
+                            </tr>
+                            <tr>
+                                <td>IRC live load (with dispersion)</td>
+                                <td>✅ IRC buttons</td>
+                                <td>Top slab</td>
+                                <td>UNI GY</td>
+                                <td>Templates with 45° dispersion through fill</td>
+                            </tr>
+                            <tr>
+                                <td>Lateral earth pressure</td>
+                                <td>✅ EP button</td>
+                                <td>Walls</td>
+                                <td>LIN GX</td>
+                                <td>P(h) = K₀γh (0 at top, max at base)</td>
+                            </tr>
+                            <tr>
+                                <td>Hydrostatic water pressure</td>
+                                <td>✅ Water button</td>
+                                <td>Walls</td>
+                                <td>LIN GX</td>
+                                <td>P(h) = γ_w × h (0 at surface)</td>
+                            </tr>
+                            <tr>
+                                <td>Surcharge on walls</td>
+                                <td>✅ Surcharge button</td>
+                                <td>Walls</td>
+                                <td>UNI GX</td>
+                                <td>P = q × K₀ (uniform along height)</td>
+                            </tr>
+                            <tr>
+                                <td>Braking/traction</td>
+                                <td>⚠️ Manual</td>
+                                <td>Top slab</td>
+                                <td>UNI GZ</td>
+                                <td>20% of first train weight (IRC 6 Cl. 211)</td>
+                            </tr>
+                            <tr>
+                                <td>Temperature gradient</td>
+                                <td>⚠️ Manual</td>
+                                <td>All slabs</td>
+                                <td>LIN</td>
+                                <td>IRC 6 Cl. 215, varies with depth of section</td>
+                            </tr>
+                            <tr>
+                                <td>Buoyancy/uplift</td>
+                                <td>❌ STAAD</td>
+                                <td>Base slab</td>
+                                <td>UNI GY (+)</td>
+                                <td>P = +γ_w × H_water (upward on base)</td>
+                            </tr>
+                            <tr>
+                                <td>Seismic (Zone factor)</td>
+                                <td>❌ STAAD</td>
+                                <td>All elements</td>
+                                <td>Response spectrum</td>
+                                <td>IS 1893, Z/2 × I/R × Sa/g</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card guide-card">
+                <h2 class="card-title">🔴 Important Disclaimers for Professional Use</h2>
+                <div class="guide-callout guide-callout-danger">
+                    <ol style="margin:0 0 0 20px; line-height:2.2;">
+                        <li><strong>Independent Verification Required:</strong> This tool computes transverse load
+                            distribution only. All outputs <strong>must be independently verified</strong> by a
+                            qualified structural engineer before use in design.</li>
+                        <li><strong>Not a Design Tool:</strong> This tool does NOT perform structural design (moment,
+                            shear, reinforcement). It is a <strong>load-distance calculator</strong> that feeds into
+                            STAAD.Pro for analysis.</li>
+                        <li><strong>IRC Values Are Templates:</strong> The IRC load templates are pre-populated per IRC
+                            6:2017. The engineer must verify that the correct loading class, impact factor, and load
+                            combinations are applied in their STAAD model.</li>
+                        <li><strong>Impact Factor Not Included:</strong> The IRC load intensities shown are
+                            <strong>without impact factor</strong>. The engineer must apply the appropriate impact
+                            factor (IF) per IRC 6 Cl. 208 in the STAAD model.
+                        </li>
+                        <li><strong>Sign Convention:</strong> Negative intensity = downward (GY). Positive intensity on
+                            GX = horizontal push on walls. Verify this matches your STAAD model's global axis
+                            convention.</li>
+                        <li><strong>Member ID Matching:</strong> The STAAD member IDs generated by this tool
+                            <strong>must match</strong> your STAAD model. Incorrect IDs will apply loads to wrong
+                            members.
+                        </li>
+                    </ol>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ Settings Tab ═══ -->
+        <section id="tab-settings" class="tab-panel">
+            <div class="panel-grid">
+                <div class="card">
+                    <h2 class="card-title">Project Information</h2>
+                    <p class="helper-text">These details appear on the cover sheet of the Excel export and serve as
+                        project traceability for checking/approval.</p>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Project Name</label>
+                            <input type="text" id="project-name" value="Bridge Load Analysis">
+                            <span class="field-hint">Used in export filenames</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Bridge / Structure Name</label>
+                            <input type="text" id="bridge-name" value="">
+                            <span class="field-hint">e.g., "RCC Box Culvert at Km 45+200"</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Engineer</label>
+                            <input type="text" id="engineer" value="">
+                            <span class="field-hint">Name of the design engineer</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Date</label>
+                            <input type="date" id="project-date">
+                        </div>
+                        <div class="form-group full-width">
+                            <label>Comments</label>
+                            <textarea id="comments" rows="2"
+                                placeholder="Load case description, assumptions, design basis..."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2 class="card-title">Structure Configuration</h2>
+                    <p class="helper-text">Defines the geometry and type of your structure. Box culvert options enable
+                        wall and base slab member groups for earth/water pressure application.</p>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Structure Type</label>
+                            <select id="structure-type">
+                                <option value="BRIDGE_DECK">Bridge Deck</option>
+                                <option value="BOX_CULVERT_1CELL">Box Culvert — 1 Cell</option>
+                                <option value="BOX_CULVERT_2CELL">Box Culvert — 2 Cells</option>
+                                <option value="BOX_CULVERT_3CELL">Box Culvert — 3 Cells</option>
+                                <option value="BOX_CULVERT_4CELL">Box Culvert — 4 Cells</option>
+                            </select>
+                            <span class="field-hint">Box culvert adds wall + base member groups</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Total Width (m)</label>
+                            <input type="number" id="total-width" value="8.50" step="0.01" min="0.01">
+                            <span class="field-hint">Outer-to-outer width of deck/culvert</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Reference Axis</label>
+                            <select id="reference-axis">
+                                <option value="LEFT_EDGE" selected>Left Edge</option>
+                                <option value="RIGHT_EDGE">Right Edge</option>
+                                <option value="CENTERLINE">Centerline</option>
+                                <option value="CUSTOM">Custom Datum</option>
+                            </select>
+                            <span class="field-hint">All positions measured from this point</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Custom Datum (m)</label>
+                            <input type="number" id="custom-datum" value="0" step="0.01">
+                            <span class="field-hint">Only used if Reference Axis = Custom</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Culvert Height (m)</label>
+                            <input type="number" id="culvert-height" value="3.0" step="0.01" min="0">
+                            <span class="field-hint">Wall height — used for EP/WP templates</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Fill Depth (m)</label>
+                            <input type="number" id="fill-depth" value="0.0" step="0.01" min="0">
+                            <span class="field-hint">Earth fill above top slab (0 = no fill)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2 class="card-title">Analysis Settings</h2>
+                    <p class="helper-text">Controls calculation precision and behaviour. These should match your STAAD
+                        model units and conventions.</p>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Decimal Precision</label>
+                            <input type="number" id="decimal-precision" value="2" min="0" max="6">
+                            <span class="field-hint">2 for meters, 0 for mm, 3 for high-precision</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Units</label>
+                            <select id="units">
+                                <option value="m" selected>Meters (m)</option>
+                                <option value="mm">Millimeters (mm)</option>
+                                <option value="ft">Feet (ft)</option>
+                            </select>
+                            <span class="field-hint">Must match STAAD model units</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Overhang Policy</label>
+                            <select id="overhang-policy">
+                                <option value="ALLOW" selected>Allow (warn only)</option>
+                                <option value="CLIP">Clip to width</option>
+                                <option value="REJECT">Reject</option>
+                            </select>
+                            <span class="field-hint">For loads extending beyond bridge edges</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Start Member Number</label>
+                            <input type="number" id="start-member" value="1001" min="1">
+                            <span class="field-hint">First member ID for auto-generation</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ Geometry Tab ═══ -->
+        <section id="tab-geometry" class="tab-panel">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Member Strips</h2>
+                    <div class="card-actions">
+                        <div class="toggle-group">
+                            <button class="toggle-btn active" id="auto-mode-btn"
+                                onclick="setMemberMode('auto')">Auto</button>
+                            <button class="toggle-btn" id="manual-mode-btn"
+                                onclick="setMemberMode('manual')">Manual</button>
+                        </div>
+                    </div>
+                </div>
+                <p class="helper-text">Each row represents one STAAD member (transverse beam/strip). <strong>Auto
+                        mode</strong> divides the total width into equal strips. <strong>Manual mode</strong> lets you
+                    define custom widths — useful for variable strip widths near kerbs or load points. Ensure Member IDs
+                    match your STAAD .std file.</p>
+
+                <!-- Auto Mode -->
+                <div id="member-auto" class="mode-panel">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Width Mode</label>
+                            <select id="width-mode" onchange="toggleWidthMode()">
+                                <option value="equal">Equal Widths</option>
+                                <option value="custom">Custom Widths (uneven)</option>
+                            </select>
+                            <span class="field-hint">Equal = all strips same width. Custom = specify each strip width
+                                individually.</span>
+                        </div>
+                        <div class="form-group" id="equal-strips-group">
+                            <label>Number of Strips</label>
+                            <input type="number" id="num-strips" value="12" min="1">
+                            <span class="field-hint">Typically 8-20 depending on analysis fineness</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Starting Member ID</label>
+                            <input type="number" id="auto-start-id" value="1001" min="1">
+                            <span class="field-hint">Must match STAAD model member numbering</span>
+                        </div>
+                    </div>
+                    <div id="custom-widths-group" style="display:none; margin-top:12px">
+                        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:6px">Custom Strip
+                            Widths (comma-separated, in metres)</label>
+                        <input type="text" id="custom-widths" placeholder="e.g. 0.5, 1.0, 2.0, 2.0, 1.5, 1.0, 0.5"
+                            style="width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px" />
+                        <span class="field-hint" style="margin-top:4px;display:block">
+                            Enter widths for each strip separated by commas. The sum must equal the total bridge width.
+                            Example for 8.5m with 7 strips: <strong>0.5, 1.2, 1.5, 1.6, 1.5, 1.2, 1.0</strong>
+                        </span>
+                        <div id="custom-widths-feedback" style="margin-top:6px;font-size:12px"></div>
+                    </div>
+                    <button class="btn btn-primary" onclick="generateAutoMembers()" style="margin-top:12px">Generate
+                        Members</button>
+                </div>
+
+                <!-- Manual Mode -->
+                <div id="member-manual" class="mode-panel" style="display:none">
+                    <div class="table-actions">
+                        <button class="btn btn-sm btn-primary" onclick="addMemberRow()">+ Add Row</button>
+                        <button class="btn btn-sm btn-ghost" onclick="importMembersCSV()">Import CSV</button>
+                    </div>
+                </div>
+
+                <!-- Member Table -->
+                <div class="table-container">
+                    <table id="member-table">
+                        <thead>
+                            <tr>
+                                <th title="STAAD member number — must match your model">Member ID</th>
+                                <th title="Left boundary position from reference axis">Start (m)</th>
+                                <th title="Right boundary position from reference axis">End (m)</th>
+                                <th title="Width = End − Start">Width (m)</th>
+                                <th title="Structural element group (for box culverts)">Group</th>
+                                <th title="Optional descriptive label">Label</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="member-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Visualization -->
+            <div class="card">
+                <h2 class="card-title">Bridge Width Diagram</h2>
+                <p class="helper-text">Visual check — each coloured block represents one STAAD member strip. Verify that
+                    strips cover the full bridge width without gaps.</p>
+                <div id="visualization-container">
+                    <svg id="bridge-svg" width="100%" height="200"></svg>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ Loads Tab ═══ -->
+        <section id="tab-loads" class="tab-panel">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Load Definitions</h2>
+                    <div class="card-actions">
+                        <button class="btn btn-sm btn-primary" onclick="addLoadRow()">+ Add Load</button>
+                        <button class="btn btn-sm btn-ghost" onclick="duplicateLastLoad()">Duplicate</button>
+                        <button class="btn btn-sm btn-ghost" onclick="importLoadsCSV()">Import CSV</button>
+                    </div>
+                </div>
+                <p class="helper-text">Define each load's transverse position and intensity. Use the <strong>IRC
+                        template buttons</strong> below to auto-populate standard vehicle loads per IRC 6:2017.
+                    <strong>Culvert buttons</strong> generate earth pressure, water pressure, and surcharge loads using
+                    the height/fill depth from Settings. <strong>Intensity is negative for downward GY loads.</strong>
+                </p>
+
+                <!-- IRC Templates -->
+                <div class="template-bar">
+                    <span class="template-label">IRC Templates:</span>
+                    <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('IRC_CLASS_AA')"
+                        title="700kN tracked, 2 tracks × 0.85m, CTC 2.05m, 1.2m kerb clearance">Class AA</button>
+                    <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('IRC_70R')"
+                        title="700kN tracked, 2 tracks × 0.84m, CTC 2.06m, 1.2m kerb clearance">70R Tracked</button>
+                    <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('IRC_CLASS_A')"
+                        title="114kN axle, 2 wheels × 0.25m, CTC 1.8m, 0.15m kerb clearance">Class A</button>
+                    <span class="template-label" style="margin-left:16px;">Culvert:</span>
+                    <button class="btn btn-xs btn-accent-alt" onclick="addCulvertTemplate('EARTH_PRESSURE')"
+                        title="Lateral EP: K₀γh, triangular 0 to K₀γH (LIN)">Earth Pressure</button>
+                    <button class="btn btn-xs btn-accent-alt" onclick="addCulvertTemplate('WATER_PRESSURE')"
+                        title="Hydrostatic: γw × h, triangular 0 to γwH (LIN)">Water</button>
+                    <button class="btn btn-xs btn-accent-alt" onclick="addCulvertTemplate('SURCHARGE')"
+                        title="Surcharge on wall: q × K₀ (uniform / UNI)">Surcharge</button>
+                    <button class="btn btn-xs btn-accent-alt" onclick="addCulvertTemplate('DEAD_LOAD_FILL')"
+                        title="Earth fill on top slab: γs × H_fill (UNI GY)">Fill DL</button>
+                    <button class="btn btn-xs btn-accent-alt" onclick="addCulvertTemplate('WEARING_COURSE')"
+                        title="Wearing course: γa × t (UNI GY)">WC DL</button>
+                </div>
+
+                <div class="table-container">
+                    <table id="load-table">
+                        <thead>
+                            <tr>
+                                <th title="Unique load identifier for traceability">Load ID</th>
+                                <th title="Loads in same case = one STAAD LOAD block">Case</th>
+                                <th title="Categorization of load source">Type</th>
+                                <th title="Left edge of load (from reference axis)">Start (m)</th>
+                                <th title="Right edge of load (from reference axis)">End (m)</th>
+                                <th title="Load intensity in kN/m (negative = downward for GY)">Intensity</th>
+                                <th title="End intensity for trapezoidal loads (LIN). Leave blank for uniform (UNI).">
+                                    Int. End</th>
+                                <th title="STAAD direction: GY=vertical, GX=horizontal, GZ=longitudinal">Direction</th>
+                                <th title="Optional notes for documentation">Notes</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="load-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ Results Tab ═══ -->
+        <section id="tab-results" class="tab-panel">
+            <!-- Summary Cards -->
+            <div class="summary-cards" id="summary-cards">
+                <div class="summary-card">
+                    <div class="summary-value" id="sum-members">0</div>
+                    <div class="summary-label">Total Members</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-value" id="sum-loads">0</div>
+                    <div class="summary-label">Total Loads</div>
+                </div>
+                <div class="summary-card accent">
+                    <div class="summary-value" id="sum-affected">0</div>
+                    <div class="summary-label">Affected Members</div>
+                </div>
+                <div class="summary-card accent">
+                    <div class="summary-value" id="sum-rows">0</div>
+                    <div class="summary-label">Overlap Rows</div>
+                </div>
+            </div>
+
+            <!-- Calculate Button -->
+            <div class="action-bar">
+                <button class="btn btn-primary btn-lg" onclick="runCalculation()" id="calc-btn">
+                    ▶ Calculate Overlaps
+                </button>
+            </div>
+
+            <!-- Validation Messages -->
+            <div id="validation-messages" class="validation-container" style="display:none"></div>
+
+            <!-- Results Visualization -->
+            <div class="card" id="results-viz-card" style="display:none">
+                <h2 class="card-title">Overlap Visualization</h2>
+                <p class="helper-text">Loads shown above, member strips below. Dashed cyan areas = overlap zones where
+                    load acts on the member. Verify that load positions match your bridge cross-section layout.</p>
+                <div id="results-viz-container">
+                    <svg id="results-svg" width="100%" height="280"></svg>
+                </div>
+            </div>
+
+            <!-- STAAD.Pro-Style Frame Visualization -->
+            <div class="card" id="results-frame-card" style="display:none">
+                <h2 class="card-title">🔬 STAAD.Pro Frame Visualization</h2>
+                <p class="helper-text">Visual representation of your load-member model as it would appear in STAAD.Pro.
+                    Shows load patches, member strips, overlap zones, d1/d2 distances, and intensities from your actual
+                    calculation data.</p>
+                <canvas id="results-frame-canvas"
+                    style="width:100%; height:440px; border-radius:12px; border:1px solid var(--border)"></canvas>
+            </div>
+
+            <!-- Results Table -->
+            <div class="card" id="results-card" style="display:none">
+                <h2 class="card-title">Overlap Calculations</h2>
+                <p class="helper-text">Each row = one (load, member) pair where an overlap exists. <strong>d1 and d2 are
+                        the exact values</strong> you enter in STAAD.Pro's <code>MEMBER LOAD</code> command. Verify: d2
+                    > d1, loaded length > 0, and intensity sign is correct.</p>
+                <div class="table-container">
+                    <table id="results-table">
+                        <thead>
+                            <tr>
+                                <th title="Load identifier">Load</th>
+                                <th title="Load case group">Case</th>
+                                <th title="STAAD member number">Member</th>
+                                <th title="Global position where overlap starts">Overlap Start</th>
+                                <th title="Global position where overlap ends">Overlap End</th>
+                                <th title="STAAD d1: distance from member start to load start on this member">d1 (Front)
+                                </th>
+                                <th title="STAAD d2: distance from member start to load end on this member">d2 (Back)
+                                </th>
+                                <th title="d2 − d1 = loaded portion on this member">Length</th>
+                                <th title="Load intensity at overlap start (kN/m)">Intensity</th>
+                                <th title="STAAD global/local direction">Dir</th>
+                                <th title="UNI = uniform, LIN = trapezoidal">Format</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ STAAD Export Tab ═══ -->
+        <section id="tab-staad" class="tab-panel">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">STAAD.Pro Member Load Commands</h2>
+                    <div class="card-actions">
+                        <button class="btn btn-sm btn-primary" onclick="downloadSTAAD()">⬇ Download .txt</button>
+                        <button class="btn btn-sm btn-ghost" onclick="copySTAAD()">📋 Copy</button>
+                    </div>
+                </div>
+                <p class="helper-text">Copy the text below and paste into your STAAD.Pro command file under the
+                    appropriate load case. Both d1 and d2 are measured from the <strong>member START NODE</strong>.
+                    Verify member IDs match your model before running analysis.</p>
+                <pre id="staad-preview" class="code-preview">Run calculation first to generate STAAD output...</pre>
+            </div>
+        </section>
+
+        <!-- ═══ Excel Export Tab ═══ -->
+        <section id="tab-excel" class="tab-panel">
+            <div class="panel-grid">
+                <div class="card">
+                    <h2 class="card-title">Excel Workbook Export</h2>
+                    <p class="card-desc">Generate a professional Excel workbook with 6 sheets: Project Info, Members,
+                        Loads, Overlap Calculations, STAAD Export, and Summary. Suitable for documentation, checking,
+                        and client submission.</p>
+                    <div class="export-features">
+                        <div class="feature">✓ Bold headers with frozen top row</div>
+                        <div class="feature">✓ Auto-fit columns</div>
+                        <div class="feature">✓ Numeric formatting with chosen precision</div>
+                        <div class="feature">✓ Alternating row colors</div>
+                        <div class="feature">✓ STAAD commands in monospace font</div>
+                        <div class="feature">✓ QA summary statistics</div>
+                    </div>
+                    <button class="btn btn-primary btn-lg" onclick="downloadExcel()" style="margin-top:24px">
+                        📗 Download Excel Workbook
+                    </button>
+                </div>
+                <div class="card">
+                    <h2 class="card-title">Other Exports</h2>
+                    <p class="helper-text">Save your work as a JSON project file to reload later, or export raw CSV data
+                        for custom post-processing in other tools.</p>
+                    <div class="export-buttons">
+                        <button class="btn btn-primary" onclick="downloadCSV()">📄 Download CSV</button>
+                        <button class="btn btn-primary" onclick="downloadSTAAD()">📝 Download STAAD .txt</button>
+                        <button class="btn btn-ghost" onclick="saveProject()">💾 Save Project JSON</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ SMART TOOLS TAB ═══ -->
+        <section id="tab-smart" class="tab-panel">
+
+            <!-- Impact Factor Calculator -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">⚡ Impact Factor Calculator (IRC 6, Cl. 208)</h2>
+                </div>
+                <p class="helper-text">Auto-compute the impact factor based on vehicle class, span, and fill depth. Fill
+                    > 600mm → no impact per IRC 112.</p>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Vehicle Class</label>
+                        <select id="if-vehicle-class">
+                            <option value="CLASS_A">IRC Class A</option>
+                            <option value="CLASS_B">IRC Class B</option>
+                            <option value="CLASS_AA_TRACKED" selected>IRC Class AA (Tracked)</option>
+                            <option value="CLASS_AA_WHEELED">IRC Class AA (Wheeled)</option>
+                            <option value="70R_TRACKED">IRC 70R (Tracked)</option>
+                            <option value="70R_WHEELED">IRC 70R (Wheeled)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Effective Span (m)</label>
+                        <input type="number" id="if-span" value="4.0" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>Fill Depth (m)</label>
+                        <input type="number" id="if-fill" value="0.0" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>Bridge Type</label>
+                        <select id="if-bridge-type">
+                            <option value="RC" selected>RC (Concrete)</option>
+                            <option value="STEEL">Steel</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="calcImpactFactor()" style="margin-top:16px">⚡ Calculate Impact
+                    Factor</button>
+                <div id="if-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card accent"><span class="summary-value" id="if-value">—</span><span
+                                class="summary-label">Impact Factor</span></div>
+                        <div class="summary-card accent"><span class="summary-value" id="if-percent">—</span><span
+                                class="summary-label">Impact %</span></div>
+                    </div>
+                    <div class="guide-callout guide-callout-info" id="if-formula"></div>
+                </div>
+            </div>
+
+            <!-- Load Combination Generator -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">🔗 Load Combination Generator (IRC 6:2017)</h2>
+                </div>
+                <p class="helper-text">Generate STAAD.Pro LOAD COMBINATION blocks with correct ULS/SLS factors. Map your
+                    load case numbers below.</p>
+                <div class="form-grid">
+                    <div class="form-group"><label>DL Case #</label><input type="number" id="lc-dl" value="1"></div>
+                    <div class="form-group"><label>SIDL Case #</label><input type="number" id="lc-sidl" value="2"></div>
+                    <div class="form-group"><label>WC Case #</label><input type="number" id="lc-wc" value="3"></div>
+                    <div class="form-group"><label>LL Case #</label><input type="number" id="lc-ll" value="4"></div>
+                    <div class="form-group"><label>EP Case #</label><input type="number" id="lc-ep" value="5"></div>
+                    <div class="form-group"><label>WP Case #</label><input type="number" id="lc-wp" value="6"></div>
+                    <div class="form-group"><label>SC Case #</label><input type="number" id="lc-sc" value="7"></div>
+                    <div class="form-group"><label>Include SLS</label><select id="lc-sls">
+                            <option value="true" selected>Yes</option>
+                            <option value="false">No</option>
+                        </select></div>
+                </div>
+                <button class="btn btn-primary" onclick="genLoadCombinations()" style="margin-top:16px">🔗 Generate
+                    Combinations</button>
+                <div id="lc-result" style="display:none; margin-top:16px">
+                    <div class="code-preview" id="lc-staad-text" style="max-height:400px"></div>
+                    <button class="btn btn-accent" onclick="copyText('lc-staad-text')" style="margin-top:8px">📋 Copy
+                        STAAD Text</button>
+                </div>
+            </div>
+
+            <!-- Load Dispersion Calculator -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">🔍 Load Dispersion Through Fill (IRC 112)</h2>
+                </div>
+                <p class="helper-text">45° dispersion through fill and wearing course. Adjusts contact area and
+                    intensity automatically.</p>
+                <div class="form-grid">
+                    <div class="form-group"><label>Contact Width (m)</label><input type="number" id="disp-width"
+                            value="0.85" step="0.01"></div>
+                    <div class="form-group"><label>Contact Length (m)</label><input type="number" id="disp-length"
+                            value="3.6" step="0.01"></div>
+                    <div class="form-group"><label>Intensity (kN/m²)</label><input type="number" id="disp-intensity"
+                            value="-97.22" step="0.01"></div>
+                    <div class="form-group"><label>Fill Depth (m)</label><input type="number" id="disp-fill" value="1.0"
+                            step="0.1"></div>
+                    <div class="form-group"><label>Wearing Course (m)</label><input type="number" id="disp-wc"
+                            value="0.075" step="0.005"></div>
+                </div>
+                <button class="btn btn-primary" onclick="calcDispersion()" style="margin-top:16px">🔍 Calculate
+                    Dispersion</button>
+                <div id="disp-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card"><span class="summary-value" id="disp-new-w">—</span><span
+                                class="summary-label">Dispersed Width (m)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="disp-new-l">—</span><span
+                                class="summary-label">Dispersed Length (m)</span></div>
+                        <div class="summary-card accent"><span class="summary-value" id="disp-new-i">—</span><span
+                                class="summary-label">New Intensity (kN/m)</span></div>
+                    </div>
+                    <div class="guide-callout guide-callout-info" id="disp-formula"></div>
+                </div>
+            </div>
+
+            <!-- Quantity Estimator -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">📦 Concrete Quantity Estimator (BOQ)</h2>
+                </div>
+                <p class="helper-text">Estimate concrete, formwork, and steel quantities for box culvert from basic
+                    dimensions.</p>
+                <div class="form-grid">
+                    <div class="form-group"><label>Clear Span (m)</label><input type="number" id="qty-span" value="4.0"
+                            step="0.1"></div>
+                    <div class="form-group"><label>Clear Height (m)</label><input type="number" id="qty-height"
+                            value="3.0" step="0.1"></div>
+                    <div class="form-group"><label>Top Slab Thickness (m)</label><input type="number" id="qty-top"
+                            value="0.30" step="0.05"></div>
+                    <div class="form-group"><label>Bottom Slab Thickness (m)</label><input type="number" id="qty-bot"
+                            value="0.35" step="0.05"></div>
+                    <div class="form-group"><label>Wall Thickness (m)</label><input type="number" id="qty-wall"
+                            value="0.30" step="0.05"></div>
+                    <div class="form-group"><label>Culvert Length (m)</label><input type="number" id="qty-length"
+                            value="10.0" step="1.0"></div>
+                    <div class="form-group"><label>Number of Cells</label><input type="number" id="qty-cells" value="1"
+                            min="1" max="4"></div>
+                    <div class="form-group"><label>Haunch Size (m)</label><input type="number" id="qty-haunch"
+                            value="0.15" step="0.05"></div>
+                </div>
+                <button class="btn btn-primary" onclick="calcQuantities()" style="margin-top:16px">📦 Estimate
+                    Quantities</button>
+                <div id="qty-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card accent"><span class="summary-value" id="qty-concrete">—</span><span
+                                class="summary-label">Concrete (m³)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="qty-formwork">—</span><span
+                                class="summary-label">Formwork (m²)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="qty-steel">—</span><span
+                                class="summary-label">Steel (kg est.)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="qty-weight">—</span><span
+                                class="summary-label">Concrete Wt (T)</span></div>
+                    </div>
+                    <div class="table-container">
+                        <table id="qty-table">
+                            <thead>
+                                <tr>
+                                    <th>Component</th>
+                                    <th>L (m)</th>
+                                    <th>W (m)</th>
+                                    <th>T (m)</th>
+                                    <th>Volume (m³)</th>
+                                    <th>Formwork (m²)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="qty-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Design Checks -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">✅ Design Checks (Bearing & Uplift)</h2>
+                </div>
+                <p class="helper-text">Quick pass/fail checks for base pressure and buoyancy stability.</p>
+                <div class="panel-grid">
+                    <div>
+                        <h3 style="color:var(--accent);margin-bottom:12px">Bearing Pressure Check</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label>Total Vertical Load (kN/m)</label><input type="number"
+                                    id="dc-load" value="500" step="10"></div>
+                            <div class="form-group"><label>Base Width (m)</label><input type="number" id="dc-base-w"
+                                    value="5.0" step="0.1"></div>
+                            <div class="form-group"><label>Eccentricity (m)</label><input type="number" id="dc-ecc"
+                                    value="0.0" step="0.01"></div>
+                            <div class="form-group"><label>Allowable SBC (kN/m²)</label><input type="number" id="dc-sbc"
+                                    value="150" step="10"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 style="color:var(--accent);margin-bottom:12px">Uplift / Buoyancy Check</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label>Fill Depth (m)</label><input type="number" id="dc-fill"
+                                    value="1.0" step="0.1"></div>
+                            <div class="form-group"><label>Water Table Depth (m)</label><input type="number" id="dc-wt"
+                                    value="0.5" step="0.1"></div>
+                            <div class="form-group"><label>Required FOS</label><input type="number" id="dc-fos"
+                                    value="1.1" step="0.1"></div>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="runDesignChecks()" style="margin-top:16px">✅ Run Design
+                    Checks</button>
+                <div id="dc-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards" id="dc-cards"></div>
+                </div>
+            </div>
+
+            <!-- Reinforcement Helper -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">🔩 Reinforcement Helper (IS 456 / IRC 112)</h2>
+                </div>
+                <p class="helper-text">Input max BM from STAAD analysis results → get suggested bar dia & spacing. This
+                    is a helper, NOT a design tool — always verify independently.</p>
+                <div class="form-grid">
+                    <div class="form-group"><label>Max BM (kN·m)</label><input type="number" id="rh-bm" value="150"
+                            step="5"></div>
+                    <div class="form-group"><label>Slab Thickness (m)</label><input type="number" id="rh-thick"
+                            value="0.30" step="0.05"></div>
+                    <div class="form-group"><label>Clear Cover (mm)</label><input type="number" id="rh-cover" value="40"
+                            step="5"></div>
+                    <div class="form-group"><label>Bar Diameter (mm)</label><select id="rh-dia">
+                            <option>10</option>
+                            <option>12</option>
+                            <option selected>16</option>
+                            <option>20</option>
+                            <option>25</option>
+                            <option>32</option>
+                        </select></div>
+                    <div class="form-group"><label>fck (MPa)</label><input type="number" id="rh-fck" value="30"
+                            step="5"></div>
+                    <div class="form-group"><label>fy (MPa)</label><input type="number" id="rh-fy" value="500"></div>
+                </div>
+                <button class="btn btn-primary" onclick="calcReinforcement()" style="margin-top:16px">🔩 Calculate
+                    Reinforcement</button>
+                <div id="rh-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card accent"><span class="summary-value" id="rh-ast">—</span><span
+                                class="summary-label">Ast Required (mm²)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="rh-spacing">—</span><span
+                                class="summary-label">Spacing (mm c/c)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="rh-provided">—</span><span
+                                class="summary-label">Ast Provided (mm²)</span></div>
+                    </div>
+                    <div class="guide-callout guide-callout-info" id="rh-formula"></div>
+                </div>
+            </div>
+
+            <!-- Skew Correction -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">📐 Skew Angle Correction</h2>
+                </div>
+                <p class="helper-text">Compute correction factors for skewed box culverts. BM and SF increase with skew
+                    angle.</p>
+                <div class="form-grid">
+                    <div class="form-group"><label>Skew Angle (°)</label><input type="number" id="sk-angle" value="0"
+                            step="5" min="0" max="60"></div>
+                    <div class="form-group"><label>Normal Span (m)</label><input type="number" id="sk-span" value="4.0"
+                            step="0.1"></div>
+                </div>
+                <button class="btn btn-primary" onclick="calcSkew()" style="margin-top:16px">📐 Compute Skew
+                    Factors</button>
+                <div id="sk-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card"><span class="summary-value" id="sk-skew-span">—</span><span
+                                class="summary-label">Skew Span (m)</span></div>
+                        <div class="summary-card accent"><span class="summary-value" id="sk-moment">—</span><span
+                                class="summary-label">BM Factor</span></div>
+                        <div class="summary-card accent"><span class="summary-value" id="sk-shear">—</span><span
+                                class="summary-label">SF Factor</span></div>
+                    </div>
+                    <div class="guide-callout guide-callout-warning" id="sk-notes" style="display:none"></div>
+                </div>
+            </div>
+
+            <!-- STAAD File Generator -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">📄 STAAD .std File Generator</h2>
+                </div>
+                <p class="helper-text">Generate a complete STAAD.Pro input file for 2D frame model of box culvert. Open
+                    directly in STAAD.</p>
+                <div class="form-grid">
+                    <div class="form-group"><label>Clear Span (m)</label><input type="number" id="std-span" value="4.0"
+                            step="0.1"></div>
+                    <div class="form-group"><label>Clear Height (m)</label><input type="number" id="std-height"
+                            value="3.0" step="0.1"></div>
+                    <div class="form-group"><label>Top Slab (m)</label><input type="number" id="std-top" value="0.30"
+                            step="0.05"></div>
+                    <div class="form-group"><label>Bottom Slab (m)</label><input type="number" id="std-bot" value="0.35"
+                            step="0.05"></div>
+                    <div class="form-group"><label>Wall (m)</label><input type="number" id="std-wall" value="0.30"
+                            step="0.05"></div>
+                    <div class="form-group"><label>Cells</label><input type="number" id="std-cells" value="1" min="1"
+                            max="4"></div>
+                    <div class="form-group"><label>fck (MPa)</label><input type="number" id="std-fck" value="30"></div>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:16px">
+                    <button class="btn btn-primary" onclick="genSTAADFile(false)">📄 Preview</button>
+                    <button class="btn btn-accent" onclick="genSTAADFile(true)">💾 Download .std</button>
+                    <button class="btn btn-primary" onclick="renderStaadVisualization()"
+                        style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">🔬 Visualize Frame</button>
+                </div>
+                <div id="staad-viz-container" style="display:none; margin-top:16px">
+                    <canvas id="staad-viz-canvas"
+                        style="width:100%; height:520px; border-radius:12px; border:1px solid var(--border)"></canvas>
+                </div>
+                <div id="std-result" style="display:none; margin-top:16px">
+                    <div class="code-preview" id="std-preview" style="max-height:400px"></div>
+                </div>
+            </div>
+
+            <!-- BBS Helper -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">📋 Bar Bending Schedule (BBS) Helper</h2>
+                </div>
+                <p class="helper-text">Auto-generate approximate BBS from culvert dimensions. For preliminary estimation
+                    only — verify with detailed design.</p>
+                <div class="form-grid">
+                    <div class="form-group"><label>Clear Span (m)</label><input type="number" id="bbs-span" value="4.0"
+                            step="0.1"></div>
+                    <div class="form-group"><label>Clear Height (m)</label><input type="number" id="bbs-height"
+                            value="3.0" step="0.1"></div>
+                    <div class="form-group"><label>Culvert Length (m)</label><input type="number" id="bbs-length"
+                            value="10.0" step="1"></div>
+                    <div class="form-group"><label>Cells</label><input type="number" id="bbs-cells" value="1" min="1"
+                            max="4"></div>
+                    <div class="form-group"><label>Main Bar (mm)</label><select id="bbs-main">
+                            <option>12</option>
+                            <option selected>16</option>
+                            <option>20</option>
+                            <option>25</option>
+                        </select></div>
+                    <div class="form-group"><label>Dist Bar (mm)</label><select id="bbs-dist">
+                            <option>8</option>
+                            <option>10</option>
+                            <option selected>12</option>
+                        </select></div>
+                    <div class="form-group"><label>Main Spacing (mm)</label><input type="number" id="bbs-ms" value="150"
+                            step="25"></div>
+                    <div class="form-group"><label>Dist Spacing (mm)</label><input type="number" id="bbs-ds" value="200"
+                            step="25"></div>
+                </div>
+                <button class="btn btn-primary" onclick="genBBS()" style="margin-top:16px">📋 Generate BBS</button>
+                <div id="bbs-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card accent"><span class="summary-value" id="bbs-total">—</span><span
+                                class="summary-label">Total Steel (kg)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="bbs-wastage">—</span><span
+                                class="summary-label">With Wastage (kg)</span></div>
+                    </div>
+                    <div class="table-container">
+                        <table id="bbs-table">
+                            <thead>
+                                <tr>
+                                    <th>Mark</th>
+                                    <th>Member</th>
+                                    <th>Dia</th>
+                                    <th>Shape</th>
+                                    <th>Cut Length</th>
+                                    <th>Qty</th>
+                                    <th>Total Length</th>
+                                    <th>Weight (kg)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bbs-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/visualization.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/staad_viz.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/results_frame_viz.js') }}"></script>
+</body>
+
+</html>
