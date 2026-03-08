@@ -327,6 +327,18 @@ from app.core.smart_features import (
     compute_skew_correction,
     generate_staad_file,
     generate_bbs,
+    # Phase 1: Critical Safety
+    check_crack_width,
+    check_shear,
+    compute_braking_force,
+    # Phase 2: Professional Completeness
+    compute_temp_shrinkage,
+    compute_effective_width,
+    check_deflection,
+    compute_soil_springs,
+    suggest_clear_cover,
+    # Phase 3: Premium
+    compute_settlement,
 )
 
 
@@ -595,6 +607,179 @@ def smart_bbs():
                 "total_with_wastage": result.total_with_wastage,
             },
         })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ─── Phase 1: Critical Safety API Routes ─────────────────────────────────────
+
+@app.route("/api/smart/crack-width", methods=["POST"])
+def smart_crack_width():
+    """Check crack width per IRC 112."""
+    try:
+        data = request.json
+        result = check_crack_width(
+            bm_sls=float(data.get("bm_sls", 50)),
+            slab_thickness=float(data.get("slab_thickness", 0.5)),
+            clear_cover=float(data.get("clear_cover", 50)),
+            bar_diameter=int(data.get("bar_diameter", 16)),
+            bar_spacing=int(data.get("bar_spacing", 150)),
+            fck=float(data.get("fck", 30)),
+            fy=float(data.get("fy", 500)),
+            exposure=data.get("exposure", "MODERATE"),
+        )
+        return jsonify({"success": True, "result": result.__dict__})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/smart/shear-check", methods=["POST"])
+def smart_shear_check():
+    """Shear design check per IS 456."""
+    try:
+        data = request.json
+        result = check_shear(
+            shear_force=float(data.get("shear_force", 100)),
+            slab_thickness=float(data.get("slab_thickness", 0.5)),
+            clear_cover=float(data.get("clear_cover", 50)),
+            bar_diameter=int(data.get("bar_diameter", 16)),
+            fck=float(data.get("fck", 30)),
+            fy=float(data.get("fy", 500)),
+            ast_provided=float(data.get("ast_provided", 0)),
+            stirrup_dia=int(data.get("stirrup_dia", 8)),
+        )
+        return jsonify({"success": True, "result": result.__dict__})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/smart/braking-force", methods=["POST"])
+def smart_braking_force():
+    """Compute braking force per IRC 6."""
+    try:
+        data = request.json
+        result = compute_braking_force(
+            vehicle_class=data.get("vehicle_class", "CLASS_A"),
+            num_lanes=int(data.get("num_lanes", 2)),
+            bridge_width=float(data.get("bridge_width", 8.5)),
+            span=float(data.get("span", 4.0)),
+            fill_depth=float(data.get("fill_depth", 0)),
+        )
+        return jsonify({"success": True, "result": result.__dict__})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ─── Phase 2: Professional Completeness API Routes ───────────────────────────
+
+@app.route("/api/smart/temp-shrinkage", methods=["POST"])
+def smart_temp_shrinkage():
+    """Compute temperature and shrinkage loads."""
+    try:
+        data = request.json
+        result = compute_temp_shrinkage(
+            slab_thickness=float(data.get("slab_thickness", 0.5)),
+            wall_thickness=float(data.get("wall_thickness", 0.4)),
+            fck=float(data.get("fck", 30)),
+            uniform_temp_rise_deg=float(data.get("temp_rise", 15)),
+            uniform_temp_fall_deg=float(data.get("temp_fall", 10)),
+            differential_temp_deg=float(data.get("temp_diff", 17.8)),
+            shrinkage_strain=float(data.get("shrinkage_strain", 0.0003)),
+        )
+        return jsonify({"success": True, "result": result.__dict__})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/smart/effective-width", methods=["POST"])
+def smart_effective_width():
+    """Compute effective slab width per IRC 112."""
+    try:
+        data = request.json
+        result = compute_effective_width(
+            contact_width=float(data.get("contact_width", 0.5)),
+            span=float(data.get("span", 4.0)),
+            load_position=float(data.get("load_position", 2.0)),
+            slab_width=float(data.get("slab_width", 8.5)),
+            fill_depth=float(data.get("fill_depth", 0)),
+            wearing_course=float(data.get("wearing_course", 0.075)),
+            slab_type=data.get("slab_type", "ONE_WAY"),
+        )
+        return jsonify({"success": True, "result": result.__dict__})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/smart/deflection", methods=["POST"])
+def smart_deflection():
+    """Check deflection per IS 456 L/d method."""
+    try:
+        data = request.json
+        result = check_deflection(
+            span=float(data.get("span", 4.0)),
+            slab_thickness=float(data.get("slab_thickness", 0.5)),
+            clear_cover=float(data.get("clear_cover", 50)),
+            bar_diameter=int(data.get("bar_diameter", 16)),
+            ast_provided=float(data.get("ast_provided", 0)),
+            fck=float(data.get("fck", 30)),
+            fy=float(data.get("fy", 500)),
+            support_condition=data.get("support_condition", "CONTINUOUS"),
+            comp_steel=float(data.get("comp_steel", 0)),
+        )
+        return jsonify({"success": True, "result": result.__dict__})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/smart/soil-springs", methods=["POST"])
+def smart_soil_springs():
+    """Compute Winkler soil spring stiffnesses."""
+    try:
+        data = request.json
+        result = compute_soil_springs(
+            base_width=float(data.get("base_width", 5.0)),
+            culvert_length=float(data.get("culvert_length", 1.0)),
+            soil_type=data.get("soil_type", "MEDIUM_CLAY"),
+            custom_ks=float(data.get("custom_ks", 0)),
+            num_nodes=int(data.get("num_nodes", 10)),
+        )
+        return jsonify({"success": True, "result": result.__dict__})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/smart/clear-cover", methods=["POST"])
+def smart_clear_cover():
+    """Suggest clear cover per IS 456 Table 16."""
+    try:
+        data = request.json
+        result = suggest_clear_cover(
+            exposure=data.get("exposure", "MODERATE"),
+            element=data.get("element", "SLAB"),
+        )
+        return jsonify({"success": True, "result": result.__dict__})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ─── Phase 3: Premium API Routes ─────────────────────────────────────────────
+
+@app.route("/api/smart/settlement", methods=["POST"])
+def smart_settlement():
+    """Compute foundation settlement."""
+    try:
+        data = request.json
+        result = compute_settlement(
+            base_pressure=float(data.get("base_pressure", 100)),
+            base_width=float(data.get("base_width", 5.0)),
+            soil_type=data.get("soil_type", "MEDIUM_CLAY"),
+            Es_soil=float(data.get("Es_soil", 0)),
+            Cc=float(data.get("Cc", 0)),
+            e0=float(data.get("e0", 0)),
+            clay_thickness=float(data.get("clay_thickness", 0)),
+            sigma_0=float(data.get("sigma_0", 0)),
+        )
+        return jsonify({"success": True, "result": result.__dict__})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 

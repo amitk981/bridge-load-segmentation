@@ -904,3 +904,235 @@ function copyText(elementId) {
         setTimeout(() => { btn.textContent = orig; }, 2000);
     });
 }
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PHASE 1: CRITICAL SAFETY - Smart Tools JS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function calcCrackWidth() {
+    try {
+        const res = await fetch('/api/smart/crack-width', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                bm_sls: +document.getElementById('cw-bm').value,
+                slab_thickness: +document.getElementById('cw-thick').value,
+                clear_cover: +document.getElementById('cw-cover').value,
+                bar_diameter: +document.getElementById('cw-dia').value,
+                bar_spacing: +document.getElementById('cw-spacing').value,
+                exposure: document.getElementById('cw-exposure').value,
+                fck: +document.getElementById('cw-fck').value,
+                fy: +document.getElementById('cw-fy').value,
+            }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        const r = data.result;
+        document.getElementById('cw-wk').textContent = r.crack_width;
+        document.getElementById('cw-perm').textContent = r.permissible_crack;
+        document.getElementById('cw-status').textContent = r.status;
+        document.getElementById('cw-status').style.color = r.status === 'PASS' ? '#10b981' : '#ef4444';
+        document.getElementById('cw-sigma').textContent = r.sigma_sr;
+        document.getElementById('cw-formula').textContent = r.formula + (r.notes ? '\n\n' + r.notes : '');
+        document.getElementById('cw-result').style.display = 'block';
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function calcShearCheck() {
+    try {
+        const res = await fetch('/api/smart/shear-check', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                shear_force: +document.getElementById('sc-vu').value,
+                slab_thickness: +document.getElementById('sc-thick').value,
+                clear_cover: +document.getElementById('sc-cover').value,
+                bar_diameter: +document.getElementById('sc-dia').value,
+                ast_provided: +document.getElementById('sc-ast').value,
+                stirrup_dia: +document.getElementById('sc-stirrup').value,
+                fck: +document.getElementById('sc-fck').value,
+                fy: +document.getElementById('sc-fy').value,
+            }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        const r = data.result;
+        document.getElementById('sc-tauv').textContent = r.tau_v;
+        document.getElementById('sc-tauc').textContent = r.tau_c;
+        document.getElementById('sc-taucmax').textContent = r.tau_c_max;
+        document.getElementById('sc-status').textContent = r.shear_status;
+        const isOk = r.shear_status.includes('NO SHEAR');
+        document.getElementById('sc-status').style.color = r.shear_status.includes('INADEQUATE') ? '#ef4444' : (isOk ? '#10b981' : '#f59e0b');
+        document.getElementById('sc-formula').textContent = r.formula + '\n\n' + r.notes;
+        document.getElementById('sc-result').style.display = 'block';
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function calcBrakingForce() {
+    try {
+        const res = await fetch('/api/smart/braking-force', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                vehicle_class: document.getElementById('bf-vehicle').value,
+                num_lanes: +document.getElementById('bf-lanes').value,
+                bridge_width: +document.getElementById('bf-width').value,
+                fill_depth: +document.getElementById('bf-fill').value,
+            }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        const r = data.result;
+        document.getElementById('bf-force').textContent = r.braking_force;
+        document.getElementById('bf-perm').textContent = r.braking_per_meter;
+        document.getElementById('bf-applied').textContent = r.applied ? 'YES' : 'NO';
+        document.getElementById('bf-applied').style.color = r.applied ? '#f59e0b' : '#10b981';
+        document.getElementById('bf-formula').textContent = r.formula + '\n\n' + r.notes;
+        document.getElementById('bf-result').style.display = 'block';
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PHASE 2: PROFESSIONAL COMPLETENESS - Smart Tools JS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function calcTempShrinkage() {
+    try {
+        const res = await fetch('/api/smart/temp-shrinkage', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                slab_thickness: +document.getElementById('ts-slab').value,
+                fck: +document.getElementById('ts-fck').value,
+                temp_rise: +document.getElementById('ts-rise').value,
+                temp_fall: +document.getElementById('ts-fall').value,
+                temp_diff: +document.getElementById('ts-diff').value,
+                shrinkage_strain: +document.getElementById('ts-shrink').value / 1e6,
+            }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        const r = data.result;
+        document.getElementById('ts-rise-f').textContent = r.axial_force_rise;
+        document.getElementById('ts-fall-f').textContent = r.axial_force_fall;
+        document.getElementById('ts-moment').textContent = r.moment_differential;
+        document.getElementById('ts-shrink-f').textContent = r.shrinkage_force;
+        document.getElementById('ts-formula').textContent = r.formula + '\n\n' + r.notes;
+        document.getElementById('ts-result').style.display = 'block';
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function calcEffectiveWidth() {
+    try {
+        const res = await fetch('/api/smart/effective-width', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contact_width: +document.getElementById('ew-contact').value,
+                span: +document.getElementById('ew-span').value,
+                load_position: +document.getElementById('ew-pos').value,
+                slab_width: +document.getElementById('ew-slabw').value,
+                fill_depth: +document.getElementById('ew-fill').value,
+                slab_type: document.getElementById('ew-type').value,
+            }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        const r = data.result;
+        document.getElementById('ew-beff').textContent = r.effective_width;
+        document.getElementById('ew-disp').textContent = r.dispersion_width;
+        document.getElementById('ew-formula').textContent = r.formula + (r.notes ? '\n\n' + r.notes : '');
+        document.getElementById('ew-result').style.display = 'block';
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function calcDeflection() {
+    try {
+        const res = await fetch('/api/smart/deflection', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                span: +document.getElementById('df-span').value,
+                slab_thickness: +document.getElementById('df-thick').value,
+                support_condition: document.getElementById('df-support').value,
+                fck: +document.getElementById('df-fck').value,
+            }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        const r = data.result;
+        document.getElementById('df-actual').textContent = r.actual_ld;
+        document.getElementById('df-allow').textContent = r.allowable_ld;
+        document.getElementById('df-status').textContent = r.status;
+        document.getElementById('df-status').style.color = r.status === 'PASS' ? '#10b981' : '#ef4444';
+        document.getElementById('df-formula').textContent = r.formula + '\n\n' + r.notes;
+        document.getElementById('df-result').style.display = 'block';
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function calcSoilSprings() {
+    try {
+        const res = await fetch('/api/smart/soil-springs', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                base_width: +document.getElementById('ss-width').value,
+                soil_type: document.getElementById('ss-soil').value,
+                custom_ks: +document.getElementById('ss-ks').value,
+                num_nodes: +document.getElementById('ss-nodes').value,
+            }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        const r = data.result;
+        document.getElementById('ss-ks-val').textContent = r.ks_value.toLocaleString();
+        document.getElementById('ss-spring').textContent = r.spring_stiffness.toLocaleString();
+        document.getElementById('ss-formula').textContent = r.formula + '\n\n' + r.notes;
+        document.getElementById('ss-result').style.display = 'block';
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function calcClearCover() {
+    try {
+        const res = await fetch('/api/smart/clear-cover', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                exposure: document.getElementById('cc-exposure').value,
+                element: document.getElementById('cc-element').value,
+            }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        const r = data.result;
+        document.getElementById('cc-cover').textContent = r.min_cover_mm + 'mm';
+        document.getElementById('cc-grade').textContent = r.min_grade;
+        document.getElementById('cc-wc').textContent = r.max_wc_ratio;
+        document.getElementById('cc-cement').textContent = r.min_cement + ' kg/m³';
+        document.getElementById('cc-notes').textContent = r.notes;
+        document.getElementById('cc-result').style.display = 'block';
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PHASE 3: PREMIUM - Smart Tools JS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function calcSettlement() {
+    try {
+        const res = await fetch('/api/smart/settlement', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                base_pressure: +document.getElementById('st-pressure').value,
+                base_width: +document.getElementById('st-width').value,
+                soil_type: document.getElementById('st-soil').value,
+                Es_soil: +document.getElementById('st-es').value,
+            }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        const r = data.result;
+        document.getElementById('st-total').textContent = r.total_settlement;
+        document.getElementById('st-imm').textContent = r.immediate_settlement;
+        document.getElementById('st-cons').textContent = r.consolidation_settlement;
+        document.getElementById('st-status').textContent = r.status;
+        document.getElementById('st-status').style.color = r.status === 'PASS' ? '#10b981' : '#ef4444';
+        document.getElementById('st-formula').textContent = r.formula + '\n\n' + r.notes;
+        document.getElementById('st-result').style.display = 'block';
+    } catch (e) { alert('Error: ' + e.message); }
+}

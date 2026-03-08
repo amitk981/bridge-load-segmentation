@@ -1279,3 +1279,965 @@ def generate_bbs(
         wastage_percent=wastage,
         total_with_wastage=round(total_with_wastage, 2),
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASE 1: CRITICAL SAFETY FEATURES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ─── 13. Crack Width Check (IRC 112, Cl. 12.3.4) ────────────────────────────
+
+@dataclass
+class CrackWidthResult:
+    element: str
+    bm_sls: float               # kN·m (SLS moment)
+    effective_depth: float      # mm
+    breadth: float              # mm
+    ast_provided: float         # mm²
+    bar_dia: int                # mm
+    spacing: int                # mm
+    fck: float
+    fy: float
+    sigma_sr: float             # MPa - stress in steel
+    epsilon_sm_cm: float        # differential strain
+    sr_max: float               # mm - max crack spacing
+    crack_width: float          # mm
+    permissible_crack: float    # mm
+    status: str                 # PASS / FAIL
+    formula: str
+    notes: str
+
+
+def check_crack_width(
+    bm_sls: float,
+    slab_thickness: float,
+    clear_cover: float = 50.0,
+    bar_diameter: int = 16,
+    bar_spacing: int = 150,
+    breadth: float = 1000.0,
+    fck: float = 30.0,
+    fy: float = 500.0,
+    permissible_crack: float = 0.2,
+    exposure: str = "MODERATE",
+) -> CrackWidthResult:
+    """
+    Crack width check per IRC 112:2011, Cl. 12.3.4.
+
+    w_k = s_r,max × (ε_sm − ε_cm)
+
+    Where:
+        s_r,max = max crack spacing
+        ε_sm = mean strain in steel
+        ε_cm = mean strain in concrete between cracks
+    """
+    d = slab_thickness * 1000 - clear_cover - bar_diameter / 2  # mm
+    b = breadth
+
+    # Modular ratio
+    Es = 200000  # MPa
+    Ecm = 5000 * math.sqrt(fck)  # IS 456 short-term
+    m = Es / Ecm  # modular ratio
+
+    # Steel area
+    bar_area = math.pi * bar_diameter ** 2 / 4
+    num_bars = int(b / bar_spacing) + 1
+    Ast = num_bars * bar_area  # mm²
+
+    # Reinforcement ratio
+    rho_eff = Ast / (b * d) if d > 0 else 0.01
+
+    Mu = abs(bm_sls) * 1e6  # N·mm
+
+    # Stress in steel (cracked section analysis - simplified)
+    # Using transformed section: x = d × [-m·ρ + √((m·ρ)² + 2·m·ρ)]
+    m_rho = m * rho_eff
+    x = d * (-m_rho + math.sqrt(m_rho ** 2 + 2 * m_rho))
+
+    # Lever arm
+    z = d - x / 3
+
+    # Steel stress at SLS
+    sigma_s = Mu / (Ast * z) if (Ast * z) > 0 else 0
+
+    # Mean strain difference (IRC 112 Eq. 12.6)
+    # ε_sm - ε_cm = [σ_s - k_t × (f_ct,eff / ρ_eff) × (1 + α_e × ρ_eff)] / Es
+    fct_eff = 0.7 * 0.259 * fck ** (2/3)  # mean tensile strength ~ 0.7 × f_ctm
+    alpha_e = Es / Ecm
+    kt = 0.5  # long term loading
+
+    numerator = sigma_s - kt * (fct_eff / rho_eff) * (1 + alpha_e * rho_eff)
+    eps_sm_cm = max(numerator / Es, 0.6 * sigma_s / Es)
+
+    # Maximum crack spacing (IRC 112 Eq. 12.8)
+    # s_r,max = 3.4c + 0.425 × k1 × k2 × φ / ρ_eff
+    k1 = 0.8   # high bond bars
+    k2 = 0.5   # bending
+    sr_max = 3.4 * clear_cover + 0.425 * k1 * k2 * bar_diameter / rho_eff
+
+    # Crack width
+    wk = sr_max * eps_sm_cm / 1000  # convert to mm (sr_max in mm, eps dimensionless)
+    # Actually sr_max is in mm and eps is dimensionless, result is in mm
+    wk = sr_max * eps_sm_cm
+
+    # Permissible crack width per exposure
+    perm_map = {"MODERATE": 0.3, "SEVERE": 0.2, "VERY_SEVERE": 0.1, "EXTREME": 0.1}
+    if exposure in perm_map:
+        permissible_crack = perm_map[exposure]
+
+    status = "PASS" if wk <= permissible_crack else "FAIL"
+
+    formula = (
+        f"IRC 112, Cl. 12.3.4\n"
+        f"d = {d:.0f}mm, m = Es/Ecm = {m:.1f}\n"
+        f"Ast = {Ast:.0f} mm², ρ_eff = {rho_eff:.5f}\n"
+        f"NA depth x = {x:.1f}mm, z = {z:.1f}mm\n"
+        f"σ_s = Mu/(Ast×z) = {sigma_s:.1f} MPa\n"
+        f"f_ct,eff = {fct_eff:.2f} MPa\n"
+        f"ε_sm - ε_cm = {eps_sm_cm:.6f}\n"
+        f"s_r,max = 3.4×{clear_cover:.0f} + 0.425×{k1}×{k2}×{bar_diameter}/{rho_eff:.5f} = {sr_max:.1f}mm\n"
+        f"w_k = {sr_max:.1f} × {eps_sm_cm:.6f} = {wk:.3f}mm"
+    )
+
+    notes = ""
+    if wk > permissible_crack:
+        notes = f"Crack width {wk:.3f}mm > {permissible_crack}mm. Reduce bar spacing or increase bar diameter."
+    elif wk > 0.8 * permissible_crack:
+        notes = f"Crack width close to limit ({wk:.3f}/{permissible_crack}mm = {wk/permissible_crack*100:.0f}%). Consider reviewing."
+
+    return CrackWidthResult(
+        element="Slab/Wall",
+        bm_sls=bm_sls,
+        effective_depth=round(d, 1),
+        breadth=breadth,
+        ast_provided=round(Ast, 1),
+        bar_dia=bar_diameter,
+        spacing=bar_spacing,
+        fck=fck, fy=fy,
+        sigma_sr=round(sigma_s, 2),
+        epsilon_sm_cm=round(eps_sm_cm, 7),
+        sr_max=round(sr_max, 1),
+        crack_width=round(wk, 3),
+        permissible_crack=permissible_crack,
+        status=status,
+        formula=formula,
+        notes=notes,
+    )
+
+
+# ─── 14. Shear Design Check (IS 456 / IRC 112) ──────────────────────────────
+
+@dataclass
+class ShearCheckResult:
+    element: str
+    shear_force: float          # kN
+    effective_depth: float      # mm
+    breadth: float              # mm
+    fck: float
+    pt_percent: float           # % tension steel
+    tau_v: float                # MPa - nominal shear stress
+    tau_c: float                # MPa - shear strength of concrete
+    tau_c_max: float            # MPa - maximum shear stress
+    shear_status: str           # 'NO SHEAR STEEL', 'PROVIDE SHEAR STEEL', 'SECTION INADEQUATE'
+    Vus: float                  # kN - shear to be carried by stirrups
+    stirrup_dia: int
+    stirrup_spacing: int        # mm
+    formula: str
+    notes: str
+
+
+def check_shear(
+    shear_force: float,
+    slab_thickness: float,
+    clear_cover: float = 50.0,
+    bar_diameter: int = 16,
+    breadth: float = 1000.0,
+    fck: float = 30.0,
+    fy: float = 500.0,
+    ast_provided: float = 0,
+    stirrup_dia: int = 8,
+) -> ShearCheckResult:
+    """
+    Shear design check per IS 456:2000, Cl. 40.
+
+    τ_v = V/(b×d) — nominal shear stress
+    τ_c from IS 456 Table 19 — design shear strength
+    τ_c,max from IS 456 Table 20 — max shear stress
+    """
+    d = slab_thickness * 1000 - clear_cover - bar_diameter / 2  # mm
+    b = breadth
+
+    Vu = abs(shear_force) * 1000  # Convert kN to N
+
+    # Nominal shear stress
+    tau_v = Vu / (b * d) if (b * d) > 0 else 0
+
+    # Tension steel percentage
+    if ast_provided <= 0:
+        # Estimate from minimum steel
+        ast_provided = 0.12 / 100 * b * slab_thickness * 1000
+    pt = 100 * ast_provided / (b * d)
+
+    # IS 456 Table 19 - Design shear strength τ_c (MPa)
+    # Interpolated formula: τ_c = 0.85 × √(0.8×fck) × (√(1+5β)-1) / (6β)
+    # where β = 0.8×fck / (6.89×pt) but β ≥ 1
+    beta_val = max(1.0, 0.8 * fck / (6.89 * pt)) if pt > 0 else 10.0
+    tau_c = 0.85 * math.sqrt(0.8 * fck) * (math.sqrt(1 + 5 * beta_val) - 1) / (6 * beta_val)
+
+    # IS 456 Table 20 - Maximum shear stress τ_c,max
+    tau_c_max_table = {15: 2.5, 20: 2.8, 25: 3.1, 30: 3.5, 35: 3.7, 40: 4.0}
+    fck_key = min(tau_c_max_table.keys(), key=lambda k: abs(k - fck))
+    tau_c_max = tau_c_max_table.get(fck_key, 3.5)
+
+    # Determine status
+    Vus = 0
+    sv = 0
+    if tau_v <= tau_c:
+        shear_status = "NO SHEAR STEEL NEEDED"
+        notes = "τ_v ≤ τ_c — Concrete alone can resist shear. Provide minimum shear reinforcement."
+    elif tau_v <= tau_c_max:
+        shear_status = "PROVIDE SHEAR STEEL"
+        Vus_N = (tau_v - tau_c) * b * d
+        Vus = Vus_N / 1000  # kN
+        # Spacing of stirrups: s = 0.87×fy×Asv×d / Vus
+        Asv = 2 * math.pi * stirrup_dia ** 2 / 4  # 2-legged stirrup
+        if Vus_N > 0:
+            sv = int(0.87 * fy * Asv * d / Vus_N)
+            sv = min(sv, int(0.75 * d), 300)
+            sv = max(sv, 75)
+            sv = (sv // 25) * 25  # round to nearest 25mm
+        notes = f"Provide {stirrup_dia}mm 2L stirrups @ {sv}mm c/c"
+    else:
+        shear_status = "SECTION INADEQUATE"
+        notes = f"τ_v ({tau_v:.2f}) > τ_c,max ({tau_c_max:.2f}). INCREASE section depth or concrete grade."
+
+    formula = (
+        f"IS 456, Cl. 40\n"
+        f"d = {d:.0f}mm, b = {b:.0f}mm\n"
+        f"τ_v = Vu/(b×d) = {Vu:.0f}/({b:.0f}×{d:.0f}) = {tau_v:.3f} MPa\n"
+        f"Ast = {ast_provided:.0f} mm², pt = {pt:.3f}%\n"
+        f"τ_c = {tau_c:.3f} MPa (IS 456 Table 19)\n"
+        f"τ_c,max = {tau_c_max:.1f} MPa (IS 456 Table 20, M{fck_key})"
+    )
+
+    return ShearCheckResult(
+        element="Slab/Wall",
+        shear_force=shear_force,
+        effective_depth=round(d, 1),
+        breadth=breadth,
+        fck=fck,
+        pt_percent=round(pt, 3),
+        tau_v=round(tau_v, 3),
+        tau_c=round(tau_c, 3),
+        tau_c_max=tau_c_max,
+        shear_status=shear_status,
+        Vus=round(Vus, 2),
+        stirrup_dia=stirrup_dia,
+        stirrup_spacing=sv,
+        formula=formula,
+        notes=notes,
+    )
+
+
+# ─── 15. Braking Force Calculator (IRC 6, Cl. 211) ──────────────────────────
+
+@dataclass
+class BrakingForceResult:
+    vehicle_class: str
+    num_lanes: int
+    braking_force: float        # kN
+    braking_per_meter: float    # kN/m (per unit length)
+    bridge_width: float
+    fill_depth: float
+    applied: bool               # whether braking is applicable
+    formula: str
+    notes: str
+
+
+def compute_braking_force(
+    vehicle_class: str = "CLASS_A",
+    num_lanes: int = 2,
+    bridge_width: float = 8.5,
+    span: float = 4.0,
+    fill_depth: float = 0.0,
+) -> BrakingForceResult:
+    """
+    Braking force per IRC 6:2017, Cl. 211.
+
+    Class A: 20% of first lane LL + 5% of second lane
+    70R/Class AA: 20% of train load
+    Applied as horizontal force at bearing level.
+    Not applicable if fill > 600mm (IRC 112 provision).
+    """
+    # Standard axle loads per IRC 6
+    train_loads = {
+        "CLASS_A": 554,          # kN (total of one train)
+        "CLASS_B": 332,
+        "CLASS_AA_TRACKED": 700,
+        "CLASS_AA_WHEELED": 400,
+        "70R_TRACKED": 700,
+        "70R_WHEELED": 1000,
+    }
+
+    total_load = train_loads.get(vehicle_class, 554)
+
+    if fill_depth > 0.6:
+        return BrakingForceResult(
+            vehicle_class=vehicle_class,
+            num_lanes=num_lanes,
+            braking_force=0,
+            braking_per_meter=0,
+            bridge_width=bridge_width,
+            fill_depth=fill_depth,
+            applied=False,
+            formula="Fill depth > 600mm → Braking force not applicable (IRC 112)",
+            notes="Braking force is attenuated by earth fill > 600mm. No horizontal braking force applied.",
+        )
+
+    # First lane: 20%, subsequent lanes: 5%
+    if num_lanes >= 1:
+        bf = 0.20 * total_load
+        if num_lanes >= 2:
+            bf += 0.05 * total_load * (num_lanes - 1)
+    else:
+        bf = 0
+
+    bf_per_m = bf / bridge_width if bridge_width > 0 else 0
+
+    formula = (
+        f"IRC 6, Cl. 211\n"
+        f"Vehicle: {vehicle_class}, Total train load = {total_load} kN\n"
+        f"Lane 1: 20% × {total_load} = {0.2*total_load:.1f} kN\n"
+    )
+    if num_lanes >= 2:
+        formula += f"Lanes 2+: 5% × {total_load} × {num_lanes-1} = {0.05*total_load*(num_lanes-1):.1f} kN\n"
+    formula += f"Total braking = {bf:.1f} kN, per metre = {bf_per_m:.2f} kN/m"
+
+    return BrakingForceResult(
+        vehicle_class=vehicle_class,
+        num_lanes=num_lanes,
+        braking_force=round(bf, 2),
+        braking_per_meter=round(bf_per_m, 2),
+        bridge_width=bridge_width,
+        fill_depth=fill_depth,
+        applied=True,
+        formula=formula,
+        notes="Apply as horizontal UNI load on top slab members in STAAD (GX direction).",
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASE 2: PROFESSIONAL COMPLETENESS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ─── 16. Temperature & Shrinkage Load Calculator ─────────────────────────────
+
+@dataclass
+class TempShrinkageResult:
+    uniform_temp_rise: float        # °C
+    uniform_temp_fall: float        # °C
+    differential_temp: float        # °C
+    shrinkage_strain: float         # × 10⁻⁶
+    # Resulting forces per metre width
+    axial_force_rise: float         # kN/m (restrained uniform temp)
+    axial_force_fall: float
+    moment_differential: float      # kN·m/m (from temp gradient)
+    shrinkage_force: float          # kN/m
+    formula: str
+    notes: str
+    staad_loads: list               # ready-to-apply load definitions
+
+
+def compute_temp_shrinkage(
+    slab_thickness: float = 0.5,
+    wall_thickness: float = 0.4,
+    fck: float = 30.0,
+    uniform_temp_rise_deg: float = 15.0,
+    uniform_temp_fall_deg: float = 10.0,
+    differential_temp_deg: float = 17.8,
+    shrinkage_strain: float = 300e-6,
+    restrained: bool = True,
+) -> TempShrinkageResult:
+    """
+    Temperature and shrinkage effects per IRC 6 & IRC 112.
+
+    Uniform temperature: IRC 6 Cl. 215 (±10 to ±20°C depending on region)
+    Differential temperature: IRC 6 Cl. 215.4 (17.8°C for concrete bridges)
+    Shrinkage: IS 456 Cl. 6.2.4 (300-400 × 10⁻⁶)
+    """
+    # Material properties
+    Ec = 5000 * math.sqrt(fck)  # MPa
+    Ec_kN = Ec * 1000           # kN/m²
+    alpha_t = 12e-6             # thermal coefficient for concrete (/°C)
+
+    # --- Uniform Temperature ---
+    # Restrained axial force: N = E × α × ΔT × A
+    A_slab = slab_thickness * 1.0  # per meter width (m²)
+
+    force_rise = Ec_kN * alpha_t * uniform_temp_rise_deg * A_slab if restrained else 0
+    force_fall = Ec_kN * alpha_t * uniform_temp_fall_deg * A_slab if restrained else 0
+
+    # --- Differential Temperature ---
+    # Self-equilibrating stress → induces moment
+    # M = E × α × ΔT_diff × I / h  (simplified for rectangular section)
+    # I = bh³/12, moment = E × α × ΔT × b × h² / 12 (approx)
+    h = slab_thickness
+    I = 1.0 * h ** 3 / 12  # m⁴ per meter width
+    moment_diff = Ec_kN * alpha_t * differential_temp_deg * 1.0 * h ** 2 / 12
+
+    # --- Shrinkage ---
+    shrinkage_force_val = Ec_kN * shrinkage_strain * A_slab if restrained else 0
+
+    # Generate STAAD-ready load definitions
+    staad_loads = []
+    if restrained:
+        staad_loads.append({
+            "type": "TEMPERATURE_RISE",
+            "description": f"Uniform temp rise +{uniform_temp_rise_deg}°C",
+            "axial_force": round(force_rise, 2),
+            "direction": "GX",
+            "intensity": round(force_rise, 2),
+        })
+        staad_loads.append({
+            "type": "TEMPERATURE_FALL",
+            "description": f"Uniform temp fall -{uniform_temp_fall_deg}°C",
+            "axial_force": round(force_fall, 2),
+            "direction": "GX",
+            "intensity": round(-force_fall, 2),
+        })
+        staad_loads.append({
+            "type": "TEMP_DIFFERENTIAL",
+            "description": f"Temp gradient {differential_temp_deg}°C",
+            "moment": round(moment_diff, 2),
+            "notes": "Apply as MEMBER LOAD UNIFORM MOMENT",
+        })
+        staad_loads.append({
+            "type": "SHRINKAGE",
+            "description": f"Shrinkage strain {shrinkage_strain*1e6:.0f}×10⁻⁶",
+            "axial_force": round(shrinkage_force_val, 2),
+            "direction": "GX",
+            "intensity": round(shrinkage_force_val, 2),
+        })
+
+    formula = (
+        f"IRC 6 Cl. 215 & IS 456 Cl. 6.2.4\n"
+        f"Ec = 5000√{fck} = {Ec:.0f} MPa, α = {alpha_t*1e6:.0f}×10⁻⁶/°C\n\n"
+        f"Uniform Rise: N = {Ec_kN:.0f} × {alpha_t} × {uniform_temp_rise_deg} × {A_slab:.3f} = {force_rise:.2f} kN/m\n"
+        f"Uniform Fall: N = {Ec_kN:.0f} × {alpha_t} × {uniform_temp_fall_deg} × {A_slab:.3f} = {force_fall:.2f} kN/m\n"
+        f"Differential: M = {Ec_kN:.0f} × {alpha_t} × {differential_temp_deg} × {h}² / 12 = {moment_diff:.2f} kN·m/m\n"
+        f"Shrinkage: N = {Ec_kN:.0f} × {shrinkage_strain} × {A_slab:.3f} = {shrinkage_force_val:.2f} kN/m"
+    )
+
+    notes = (
+        "Temperature and shrinkage create restrained forces in box culverts. "
+        "Include as separate load cases in STAAD.Pro. "
+        "SLS factor: 0.5 (quasi-permanent per IRC 6 Table B.3)."
+    )
+
+    return TempShrinkageResult(
+        uniform_temp_rise=uniform_temp_rise_deg,
+        uniform_temp_fall=uniform_temp_fall_deg,
+        differential_temp=differential_temp_deg,
+        shrinkage_strain=shrinkage_strain,
+        axial_force_rise=round(force_rise, 2),
+        axial_force_fall=round(force_fall, 2),
+        moment_differential=round(moment_diff, 2),
+        shrinkage_force=round(shrinkage_force_val, 2),
+        formula=formula,
+        notes=notes,
+        staad_loads=staad_loads,
+    )
+
+
+# ─── 17. Effective Width Calculator (IRC 112, Cl. 9.4.2) ────────────────────
+
+@dataclass
+class EffectiveWidthResult:
+    contact_width: float        # m (tyre/track contact)
+    dispersion_width: float     # m (after fill dispersion)
+    effective_width: float      # m (structural effective width)
+    span: float
+    load_position: float        # distance from support
+    slab_type: str              # 'ONE_WAY' or 'TWO_WAY'
+    alpha: float                # coefficient
+    formula: str
+    notes: str
+
+
+def compute_effective_width(
+    contact_width: float = 0.5,
+    span: float = 4.0,
+    load_position: float = 2.0,
+    slab_width: float = 8.5,
+    fill_depth: float = 0.0,
+    wearing_course: float = 0.075,
+    slab_type: str = "ONE_WAY",
+) -> EffectiveWidthResult:
+    """
+    Effective width for concentrated loads per IRC 112, Cl. 9.4.2.
+
+    For one-way slabs:
+        b_eff = α × a × (1 − a/l₀) + b_w
+
+    Where:
+        α = coefficient (2.48 for single concentrated load per IRC)
+        a = distance of load from nearest support
+        l₀ = effective span
+        b_w = contact width after dispersion
+    """
+    # Disperse through fill first
+    b_w = contact_width + 2 * (fill_depth + wearing_course)
+
+    a = load_position  # distance from nearest support
+    l0 = span
+
+    # Ensure a ≤ l0/2 (take nearest support)
+    if a > l0 / 2:
+        a = l0 - a  # measure from other support
+
+    if slab_type == "ONE_WAY":
+        alpha = 2.48  # IRC coefficient for single conc. load
+        b_eff = alpha * a * (1 - a / l0) + b_w
+
+        # b_eff should not exceed actual slab width
+        b_eff = min(b_eff, slab_width)
+
+        formula = (
+            f"IRC 112, Cl. 9.4.2 (One-Way Slab)\n"
+            f"b_w = {contact_width} + 2×({fill_depth}+{wearing_course}) = {b_w:.3f}m\n"
+            f"a = {a:.3f}m (from nearest support), l₀ = {l0:.3f}m\n"
+            f"α = {alpha}\n"
+            f"b_eff = {alpha} × {a:.3f} × (1 − {a:.3f}/{l0:.3f}) + {b_w:.3f}\n"
+            f"b_eff = {b_eff:.3f}m"
+        )
+    else:
+        # Two-way slab (Pigeaud's approach - simplified)
+        # Use IRC 21 Table 1 / IRC 112 approach
+        alpha = 2.48
+        b_eff_x = alpha * a * (1 - a / l0) + b_w
+        b_eff = min(b_eff_x, slab_width)
+
+        formula = (
+            f"IRC 112 (Two-Way Slab - simplified)\n"
+            f"b_w = {b_w:.3f}m, a = {a:.3f}m\n"
+            f"b_eff ≈ {b_eff:.3f}m\n"
+            f"Note: For accurate results, use Pigeaud's coefficient tables."
+        )
+
+    notes = ""
+    if fill_depth > 0.6:
+        notes = "With fill > 600mm, dispersion significantly reduces intensity. Impact factor = 0."
+    if b_eff >= slab_width:
+        notes += " Effective width = full slab width (load fully distributed)."
+
+    return EffectiveWidthResult(
+        contact_width=contact_width,
+        dispersion_width=round(b_w, 3),
+        effective_width=round(b_eff, 3),
+        span=span,
+        load_position=load_position,
+        slab_type=slab_type,
+        alpha=alpha,
+        formula=formula,
+        notes=notes,
+    )
+
+
+# ─── 18. Deflection Check (IS 456, Cl. 23.2) ────────────────────────────────
+
+@dataclass
+class DeflectionResult:
+    element: str
+    span: float                 # mm
+    effective_depth: float      # mm
+    pt_provided: float          # % tension steel
+    pc_provided: float          # % compression steel
+    fs: float                   # MPa - steel stress at service
+    basic_ratio: float          # L/d basic (20 for cont, 26 for simply supported)
+    mod_factor_tension: float   # from IS 456 Fig 4
+    mod_factor_compression: float
+    allowable_ld: float         # modified L/d
+    actual_ld: float            # actual L/d
+    status: str
+    formula: str
+    notes: str
+
+
+def check_deflection(
+    span: float,
+    slab_thickness: float,
+    clear_cover: float = 50.0,
+    bar_diameter: int = 16,
+    ast_provided: float = 0,
+    breadth: float = 1000.0,
+    fck: float = 30.0,
+    fy: float = 500.0,
+    support_condition: str = "CONTINUOUS",
+    comp_steel: float = 0,
+) -> DeflectionResult:
+    """
+    Deflection check using L/d ratio method per IS 456, Cl. 23.2.
+
+    L/d ≤ basic ratio × mod_factor_tension × mod_factor_compression
+    """
+    d = slab_thickness * 1000 - clear_cover - bar_diameter / 2  # mm
+    L = span * 1000  # mm
+
+    actual_ld = L / d if d > 0 else 999
+
+    # Basic L/d ratio (IS 456 Cl. 23.2.1)
+    basic_ratios = {
+        "CANTILEVER": 7,
+        "SIMPLY_SUPPORTED": 20,
+        "CONTINUOUS": 26,
+    }
+    basic = basic_ratios.get(support_condition, 26)
+
+    # Tension steel modification factor (IS 456 Fig 4)
+    if ast_provided <= 0:
+        ast_provided = 0.12 / 100 * breadth * slab_thickness * 1000
+
+    pt = 100 * ast_provided / (breadth * d) if d > 0 else 0.12
+
+    # Steel stress at service (simplified)
+    fs = 0.58 * fy * (ast_provided / max(ast_provided, 1))  # simplified - assume Ast_req ≈ Ast_prov
+
+    # Modification factor for tension reinforcement (IS 456 Fig 4 - curve fit)
+    # Approximate curve: MF = 1/(0.225 + 0.00322×fs + 0.625×log10(pt_req))
+    # Simplified version:
+    if pt <= 0.3:
+        mf_tension = 1.8 - 0.5 * (fs / fy)
+    elif pt <= 1.0:
+        mf_tension = 1.5 - 0.6 * (pt - 0.3) - 0.3 * (fs / fy)
+    elif pt <= 2.0:
+        mf_tension = 1.1 - 0.2 * (pt - 1.0)
+    else:
+        mf_tension = 0.8
+
+    mf_tension = max(mf_tension, 1.0)
+    mf_tension = min(mf_tension, 2.0)
+
+    # Compression steel modification factor (IS 456 Fig 5)
+    pc = 100 * comp_steel / (breadth * d) if (d > 0 and comp_steel > 0) else 0
+    if pc <= 0:
+        mf_comp = 1.0
+    elif pc <= 1.0:
+        mf_comp = 1.0 + 0.15 * pc
+    elif pc <= 3.0:
+        mf_comp = 1.15 + 0.05 * (pc - 1.0)
+    else:
+        mf_comp = 1.25
+
+    allowable_ld = basic * mf_tension * mf_comp
+
+    status = "PASS" if actual_ld <= allowable_ld else "FAIL"
+
+    formula = (
+        f"IS 456, Cl. 23.2\n"
+        f"d = {d:.0f}mm, L = {L:.0f}mm\n"
+        f"Actual L/d = {actual_ld:.1f}\n"
+        f"Basic L/d = {basic} ({support_condition})\n"
+        f"pt = {pt:.3f}%, fs = {fs:.0f} MPa\n"
+        f"MF (tension) = {mf_tension:.2f} (IS 456 Fig 4)\n"
+        f"MF (compression) = {mf_comp:.2f} (IS 456 Fig 5)\n"
+        f"Allowable L/d = {basic} × {mf_tension:.2f} × {mf_comp:.2f} = {allowable_ld:.1f}"
+    )
+
+    notes = ""
+    if status == "FAIL":
+        notes = f"L/d = {actual_ld:.1f} > {allowable_ld:.1f}. Increase slab depth or provide more compression steel."
+    else:
+        notes = f"Deflection OK. Utilization = {actual_ld/allowable_ld*100:.0f}%"
+
+    return DeflectionResult(
+        element="Slab",
+        span=span,
+        effective_depth=round(d, 1),
+        pt_provided=round(pt, 3),
+        pc_provided=round(pc, 3),
+        fs=round(fs, 1),
+        basic_ratio=basic,
+        mod_factor_tension=round(mf_tension, 2),
+        mod_factor_compression=round(mf_comp, 2),
+        allowable_ld=round(allowable_ld, 1),
+        actual_ld=round(actual_ld, 1),
+        status=status,
+        formula=formula,
+        notes=notes,
+    )
+
+
+# ─── 19. Soil Spring Calculator (Winkler Model) ─────────────────────────────
+
+@dataclass
+class SoilSpringResult:
+    soil_type: str
+    ks_value: float             # kN/m³ - subgrade modulus
+    spring_stiffness: float     # kN/m per node
+    num_springs: int
+    node_spacing: float         # m
+    formula: str
+    notes: str
+    staad_commands: str
+
+
+def compute_soil_springs(
+    base_width: float = 5.0,
+    culvert_length: float = 1.0,
+    soil_type: str = "MEDIUM_CLAY",
+    custom_ks: float = 0,
+    num_nodes: int = 10,
+) -> SoilSpringResult:
+    """
+    Compute Winkler spring stiffnesses for soil-structure interaction.
+
+    ks values (kN/m³) from Bowles and IS 2950:
+    - Loose sand: 4,800 - 16,000
+    - Medium sand: 9,600 - 80,000
+    - Dense sand: 64,000 - 128,000
+    - Soft clay: 12,000 - 24,000
+    - Medium clay: 24,000 - 48,000
+    - Stiff clay: 48,000 - 96,000
+    """
+    ks_ranges = {
+        "LOOSE_SAND": (4800, 16000, 10000),
+        "MEDIUM_SAND": (9600, 80000, 30000),
+        "DENSE_SAND": (64000, 128000, 80000),
+        "SOFT_CLAY": (12000, 24000, 16000),
+        "MEDIUM_CLAY": (24000, 48000, 36000),
+        "STIFF_CLAY": (48000, 96000, 60000),
+        "HARD_ROCK": (300000, 500000, 400000),
+    }
+
+    if custom_ks > 0:
+        ks = custom_ks
+        soil_desc = f"Custom (ks = {ks:.0f} kN/m³)"
+    elif soil_type in ks_ranges:
+        low, high, typical = ks_ranges[soil_type]
+        ks = typical
+        soil_desc = f"{soil_type.replace('_', ' ').title()} (range: {low:,}-{high:,}, typical: {typical:,} kN/m³)"
+    else:
+        ks = 36000
+        soil_desc = "Default medium clay"
+
+    # Spring stiffness per node
+    node_spacing = base_width / max(num_nodes - 1, 1)
+    # Tributary area per spring = node_spacing × unit length
+    tributary_area = node_spacing * culvert_length
+    spring_k = ks * tributary_area
+
+    # Edge nodes get half tributary area
+    spring_k_edge = spring_k / 2
+
+    # Generate STAAD support commands
+    lines = []
+    lines.append(f"* Winkler springs: ks = {ks:.0f} kN/m³")
+    lines.append(f"* Soil type: {soil_type}")
+    lines.append("SUPPORTS")
+    for i in range(num_nodes):
+        k = spring_k_edge if (i == 0 or i == num_nodes - 1) else spring_k
+        lines.append(f"* Node {i+1}: KFY {k:.1f}")
+    staad_cmds = "\n".join(lines)
+
+    formula = (
+        f"Winkler Spring Model (IS 2950 / Bowles)\n"
+        f"Soil: {soil_desc}\n"
+        f"ks = {ks:.0f} kN/m³\n"
+        f"Node spacing = {base_width:.3f}/{num_nodes-1} = {node_spacing:.3f}m\n"
+        f"Tributary area = {node_spacing:.3f} × {culvert_length:.3f} = {tributary_area:.4f} m²\n"
+        f"K_spring (interior) = {ks:.0f} × {tributary_area:.4f} = {spring_k:.1f} kN/m\n"
+        f"K_spring (edge) = {spring_k_edge:.1f} kN/m"
+    )
+
+    notes = (
+        "Replace fixed supports in STAAD with spring supports (KFY). "
+        "This models elastic foundation and gives more realistic BM in bottom slab. "
+        "Use geotechnical report ks value if available."
+    )
+
+    return SoilSpringResult(
+        soil_type=soil_type,
+        ks_value=ks,
+        spring_stiffness=round(spring_k, 2),
+        num_springs=num_nodes,
+        node_spacing=round(node_spacing, 4),
+        formula=formula,
+        notes=notes,
+        staad_commands=staad_cmds,
+    )
+
+
+# ─── 20. Clear Cover Auto-Suggestion (IS 456 Table 16) ──────────────────────
+
+@dataclass
+class ClearCoverResult:
+    exposure: str
+    min_cover_mm: int
+    min_grade: str
+    max_wc_ratio: float
+    min_cement: int             # kg/m³
+    notes: str
+
+
+def suggest_clear_cover(
+    exposure: str = "MODERATE",
+    element: str = "SLAB",
+) -> ClearCoverResult:
+    """
+    Clear cover suggestions per IS 456:2000 Table 16 & Table 5.
+
+    Exposure conditions:
+    - MILD: Protected against weather, internal surfaces
+    - MODERATE: Sheltered from rain, buried concrete
+    - SEVERE: Exposed to rain, alternate wetting/drying
+    - VERY_SEVERE: Coastal, exposed to sea spray
+    - EXTREME: Splash zone, tidal zone
+    """
+    cover_table = {
+        # exposure: (min_cover_mm, min_grade, max_wc, min_cement)
+        "MILD":        (20, "M20", 0.55, 300),
+        "MODERATE":    (30, "M25", 0.50, 300),
+        "SEVERE":      (45, "M30", 0.45, 320),
+        "VERY_SEVERE": (50, "M35", 0.45, 340),
+        "EXTREME":     (75, "M40", 0.40, 360),
+    }
+
+    data = cover_table.get(exposure, cover_table["MODERATE"])
+    min_cover, min_grade, max_wc, min_cement = data
+
+    # Adjustments for element type
+    element_notes = ""
+    if element in ("WALL", "SIDE_WALL") and exposure in ("SEVERE", "VERY_SEVERE", "EXTREME"):
+        min_cover = max(min_cover, 50)
+        element_notes = "Earth-face walls: 50mm minimum (IRC 112). "
+    elif element == "BOTTOM_SLAB":
+        min_cover = max(min_cover, 50)
+        element_notes = "Bottom slab in contact with soil: 50mm minimum. "
+
+    notes = (
+        f"{element_notes}"
+        f"IS 456 Table 16: {exposure} exposure → {min_cover}mm cover. "
+        f"Use {min_grade} or higher. W/C ≤ {max_wc}. "
+        f"Min cement content: {min_cement} kg/m³."
+    )
+
+    return ClearCoverResult(
+        exposure=exposure,
+        min_cover_mm=min_cover,
+        min_grade=min_grade,
+        max_wc_ratio=max_wc,
+        min_cement=min_cement,
+        notes=notes,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASE 3: PREMIUM DIFFERENTIATORS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ─── 21. Settlement Calculator ───────────────────────────────────────────────
+
+@dataclass
+class SettlementResult:
+    immediate_settlement: float     # mm
+    consolidation_settlement: float # mm
+    total_settlement: float         # mm
+    permissible_settlement: float   # mm
+    status: str
+    formula: str
+    notes: str
+
+
+def compute_settlement(
+    base_pressure: float = 100.0,
+    base_width: float = 5.0,
+    soil_type: str = "MEDIUM_CLAY",
+    Es_soil: float = 0,
+    Cc: float = 0,
+    e0: float = 0,
+    clay_thickness: float = 0,
+    sigma_0: float = 0,
+) -> SettlementResult:
+    """
+    Settlement calculation for box culvert foundation.
+
+    Immediate settlement (sand): S_i = q × B × (1-μ²) × If / Es
+    Consolidation settlement (clay): S_c = Cc/(1+e0) × H × log10((σ0 + Δσ)/σ0)
+    """
+    # Default soil properties if not provided
+    soil_props = {
+        "LOOSE_SAND":  {"Es": 10000, "mu": 0.30, "type": "SAND"},
+        "MEDIUM_SAND": {"Es": 25000, "mu": 0.30, "type": "SAND"},
+        "DENSE_SAND":  {"Es": 50000, "mu": 0.30, "type": "SAND"},
+        "SOFT_CLAY":   {"Es": 5000,  "mu": 0.40, "Cc": 0.3, "e0": 1.2, "type": "CLAY"},
+        "MEDIUM_CLAY": {"Es": 15000, "mu": 0.35, "Cc": 0.2, "e0": 0.8, "type": "CLAY"},
+        "STIFF_CLAY":  {"Es": 30000, "mu": 0.30, "Cc": 0.1, "e0": 0.6, "type": "CLAY"},
+        "HARD_ROCK":   {"Es": 500000, "mu": 0.20, "type": "ROCK"},
+    }
+
+    props = soil_props.get(soil_type, soil_props["MEDIUM_CLAY"])
+    if Es_soil <= 0:
+        Es_soil = props["Es"]
+    mu = props.get("mu", 0.3)
+    soil_class = props.get("type", "CLAY")
+
+    # Immediate settlement (elastic)
+    If = 1.0  # influence factor (rectangular foundation, center, ~1.0)
+    Si = base_pressure * base_width * (1 - mu ** 2) * If / Es_soil * 1000  # mm
+
+    # Consolidation settlement (clay only)
+    Sc = 0
+    if soil_class == "CLAY":
+        if Cc <= 0:
+            Cc = props.get("Cc", 0.2)
+        if e0 <= 0:
+            e0 = props.get("e0", 0.8)
+        if clay_thickness <= 0:
+            clay_thickness = base_width  # assume H ≈ B
+        if sigma_0 <= 0:
+            sigma_0 = 18 * (clay_thickness / 2 + 1)  # approx overburden
+
+        delta_sigma = base_pressure  # stress increase at center of clay
+        if sigma_0 > 0:
+            Sc = Cc / (1 + e0) * clay_thickness * math.log10((sigma_0 + delta_sigma) / sigma_0) * 1000  # mm
+
+    total = Si + Sc
+
+    # Permissible settlement (IS 1904)
+    perm = 50 if soil_class == "SAND" else 75  # mm for isolated footings
+
+    status = "PASS" if total <= perm else "FAIL"
+
+    formula = (
+        f"IS 1904 / Terzaghi\n"
+        f"Soil: {soil_type}, Es = {Es_soil} kN/m², μ = {mu}\n\n"
+        f"Immediate: S_i = {base_pressure}×{base_width}×(1-{mu}²)×{If}/{Es_soil}×1000\n"
+        f"S_i = {Si:.2f}mm\n"
+    )
+    if Sc > 0:
+        formula += (
+            f"\nConsolidation: S_c = {Cc}/(1+{e0}) × {clay_thickness:.1f} × "
+            f"log₁₀(({sigma_0:.1f}+{base_pressure:.1f})/{sigma_0:.1f}) × 1000\n"
+            f"S_c = {Sc:.2f}mm\n"
+        )
+    formula += f"\nTotal = {Si:.2f} + {Sc:.2f} = {total:.2f}mm (permissible: {perm}mm)"
+
+    notes = ""
+    if status == "FAIL":
+        notes = f"Total settlement {total:.1f}mm > permissible {perm}mm. Consider pile foundation or ground improvement."
+    elif total > 0.7 * perm:
+        notes = f"Settlement utilization high ({total/perm*100:.0f}%). Monitor during construction."
+    else:
+        notes = f"Settlement within limits ({total/perm*100:.0f}% utilization)."
+
+    return SettlementResult(
+        immediate_settlement=round(Si, 2),
+        consolidation_settlement=round(Sc, 2),
+        total_settlement=round(total, 2),
+        permissible_settlement=perm,
+        status=status,
+        formula=formula,
+        notes=notes,
+    )

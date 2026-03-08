@@ -2026,6 +2026,372 @@
                 </div>
             </div>
 
+            <!-- ═══ PHASE 1: CRITICAL SAFETY ═══ -->
+
+            <!-- Crack Width Check -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-search" />
+                        </svg> Crack Width Check (IRC 112, SLS)</h2>
+                </div>
+                <p class="helper-text">Check crack width w_k per IRC 112 Cl. 12.3.4. Permissible: 0.2mm (severe), 0.3mm
+                    (moderate).</p>
+                <div class="panel-grid">
+                    <div class="form-group"><label>BM at SLS (kN·m)</label><input type="number" id="cw-bm" value="50"
+                            step="5"></div>
+                    <div class="form-group"><label>Slab Thickness (m)</label><input type="number" id="cw-thick"
+                            value="0.5" step="0.05"></div>
+                    <div class="form-group"><label>Clear Cover (mm)</label><input type="number" id="cw-cover" value="50"
+                            step="5"></div>
+                    <div class="form-group"><label>Bar Dia (mm)</label><input type="number" id="cw-dia" value="16">
+                    </div>
+                    <div class="form-group"><label>Bar Spacing (mm)</label><input type="number" id="cw-spacing"
+                            value="150" step="25"></div>
+                    <div class="form-group"><label>Exposure</label><select id="cw-exposure">
+                            <option value="MODERATE">Moderate</option>
+                            <option value="SEVERE" selected>Severe</option>
+                            <option value="VERY_SEVERE">Very Severe</option>
+                            <option value="EXTREME">Extreme</option>
+                        </select></div>
+                    <div class="form-group"><label>fck (MPa)</label><input type="number" id="cw-fck" value="30"></div>
+                    <div class="form-group"><label>fy (MPa)</label><input type="number" id="cw-fy" value="500"></div>
+                </div>
+                <button class="btn btn-primary" onclick="calcCrackWidth()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-search" />
+                    </svg> Check Crack Width</button>
+                <div id="cw-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card accent"><span class="summary-value" id="cw-wk">—</span><span
+                                class="summary-label">Crack Width (mm)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="cw-perm">—</span><span
+                                class="summary-label">Permissible (mm)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="cw-status">—</span><span
+                                class="summary-label">Status</span></div>
+                        <div class="summary-card"><span class="summary-value" id="cw-sigma">—</span><span
+                                class="summary-label">Steel Stress (MPa)</span></div>
+                    </div>
+                    <div class="code-preview" id="cw-formula" style="max-height:250px; white-space:pre-line"></div>
+                </div>
+            </div>
+
+            <!-- Shear Design Check -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-check" />
+                        </svg> Shear Design Check (IS 456, Cl. 40)</h2>
+                </div>
+                <p class="helper-text">Check shear stress vs concrete shear strength. Determines if shear steel is
+                    needed.</p>
+                <div class="panel-grid">
+                    <div class="form-group"><label>Shear Force Vu (kN)</label><input type="number" id="sc-vu"
+                            value="100" step="10"></div>
+                    <div class="form-group"><label>Slab Thickness (m)</label><input type="number" id="sc-thick"
+                            value="0.5" step="0.05"></div>
+                    <div class="form-group"><label>Clear Cover (mm)</label><input type="number" id="sc-cover" value="50"
+                            step="5"></div>
+                    <div class="form-group"><label>Bar Dia (mm)</label><input type="number" id="sc-dia" value="16">
+                    </div>
+                    <div class="form-group"><label>Ast Provided (mm², 0=min)</label><input type="number" id="sc-ast"
+                            value="0"></div>
+                    <div class="form-group"><label>Stirrup Dia (mm)</label><input type="number" id="sc-stirrup"
+                            value="8"></div>
+                    <div class="form-group"><label>fck (MPa)</label><input type="number" id="sc-fck" value="30"></div>
+                    <div class="form-group"><label>fy (MPa)</label><input type="number" id="sc-fy" value="500"></div>
+                </div>
+                <button class="btn btn-primary" onclick="calcShearCheck()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-check" />
+                    </svg> Check Shear</button>
+                <div id="sc-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card accent"><span class="summary-value" id="sc-tauv">—</span><span
+                                class="summary-label">τ_v (MPa)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="sc-tauc">—</span><span
+                                class="summary-label">τ_c (MPa)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="sc-taucmax">—</span><span
+                                class="summary-label">τ_c,max (MPa)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="sc-status">—</span><span
+                                class="summary-label">Status</span></div>
+                    </div>
+                    <div class="code-preview" id="sc-formula" style="max-height:200px; white-space:pre-line"></div>
+                </div>
+            </div>
+
+            <!-- Braking Force -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-zap" />
+                        </svg> Braking Force (IRC 6, Cl. 211)</h2>
+                </div>
+                <p class="helper-text">Horizontal braking force from traffic. 20% first lane + 5% subsequent. Not
+                    applicable if fill > 600mm.</p>
+                <div class="panel-grid">
+                    <div class="form-group"><label>Vehicle Class</label><select id="bf-vehicle">
+                            <option value="CLASS_A">IRC Class A</option>
+                            <option value="CLASS_AA_TRACKED">IRC Class AA (Tracked)</option>
+                            <option value="CLASS_AA_WHEELED">IRC Class AA (Wheeled)</option>
+                            <option value="70R_TRACKED">IRC 70R (Tracked)</option>
+                            <option value="70R_WHEELED">IRC 70R (Wheeled)</option>
+                        </select></div>
+                    <div class="form-group"><label>No. of Lanes</label><input type="number" id="bf-lanes" value="2"
+                            min="1" max="6"></div>
+                    <div class="form-group"><label>Bridge Width (m)</label><input type="number" id="bf-width"
+                            value="8.5" step="0.5"></div>
+                    <div class="form-group"><label>Fill Depth (m)</label><input type="number" id="bf-fill" value="0"
+                            step="0.1"></div>
+                </div>
+                <button class="btn btn-primary" onclick="calcBrakingForce()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-zap" />
+                    </svg> Calculate Braking</button>
+                <div id="bf-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card accent"><span class="summary-value" id="bf-force">—</span><span
+                                class="summary-label">Total (kN)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="bf-perm">—</span><span
+                                class="summary-label">Per Meter (kN/m)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="bf-applied">—</span><span
+                                class="summary-label">Applied?</span></div>
+                    </div>
+                    <div class="code-preview" id="bf-formula" style="max-height:200px; white-space:pre-line"></div>
+                </div>
+            </div>
+
+            <!-- ═══ PHASE 2: PROFESSIONAL ═══ -->
+
+            <!-- Temperature & Shrinkage -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-layers" />
+                        </svg> Temperature & Shrinkage (IRC 6 / IS 456)</h2>
+                </div>
+                <p class="helper-text">Restrained forces from temperature variation and concrete shrinkage.</p>
+                <div class="panel-grid">
+                    <div class="form-group"><label>Slab Thickness (m)</label><input type="number" id="ts-slab"
+                            value="0.5" step="0.05"></div>
+                    <div class="form-group"><label>fck (MPa)</label><input type="number" id="ts-fck" value="30"></div>
+                    <div class="form-group"><label>Temp Rise (°C)</label><input type="number" id="ts-rise" value="15">
+                    </div>
+                    <div class="form-group"><label>Temp Fall (°C)</label><input type="number" id="ts-fall" value="10">
+                    </div>
+                    <div class="form-group"><label>Differential (°C)</label><input type="number" id="ts-diff"
+                            value="17.8"></div>
+                    <div class="form-group"><label>Shrinkage (×10⁻⁶)</label><input type="number" id="ts-shrink"
+                            value="300"></div>
+                </div>
+                <button class="btn btn-primary" onclick="calcTempShrinkage()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-layers" />
+                    </svg> Calculate</button>
+                <div id="ts-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card accent"><span class="summary-value" id="ts-rise-f">—</span><span
+                                class="summary-label">Rise (kN/m)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="ts-fall-f">—</span><span
+                                class="summary-label">Fall (kN/m)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="ts-moment">—</span><span
+                                class="summary-label">Moment (kN·m/m)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="ts-shrink-f">—</span><span
+                                class="summary-label">Shrinkage (kN/m)</span></div>
+                    </div>
+                    <div class="code-preview" id="ts-formula" style="max-height:300px; white-space:pre-line"></div>
+                </div>
+            </div>
+
+            <!-- Effective Width -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-compass" />
+                        </svg> Effective Width b_eff (IRC 112)</h2>
+                </div>
+                <p class="helper-text">Structural effective width for concentrated load distribution on slab.</p>
+                <div class="panel-grid">
+                    <div class="form-group"><label>Contact Width (m)</label><input type="number" id="ew-contact"
+                            value="0.5" step="0.1"></div>
+                    <div class="form-group"><label>Span (m)</label><input type="number" id="ew-span" value="4.0"
+                            step="0.5"></div>
+                    <div class="form-group"><label>Load Position (m)</label><input type="number" id="ew-pos" value="2.0"
+                            step="0.1"></div>
+                    <div class="form-group"><label>Slab Width (m)</label><input type="number" id="ew-slabw" value="8.5"
+                            step="0.5"></div>
+                    <div class="form-group"><label>Fill Depth (m)</label><input type="number" id="ew-fill" value="0"
+                            step="0.1"></div>
+                    <div class="form-group"><label>Slab Type</label><select id="ew-type">
+                            <option value="ONE_WAY">One-Way</option>
+                            <option value="TWO_WAY">Two-Way</option>
+                        </select></div>
+                </div>
+                <button class="btn btn-primary" onclick="calcEffectiveWidth()" style="margin-top:16px"><svg
+                        class="icon">
+                        <use href="#i-compass" />
+                    </svg> Calculate b_eff</button>
+                <div id="ew-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card accent"><span class="summary-value" id="ew-beff">—</span><span
+                                class="summary-label">b_eff (m)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="ew-disp">—</span><span
+                                class="summary-label">Dispersed (m)</span></div>
+                    </div>
+                    <div class="code-preview" id="ew-formula" style="max-height:200px; white-space:pre-line"></div>
+                </div>
+            </div>
+
+            <!-- Deflection Check -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-chart" />
+                        </svg> Deflection Check (IS 456)</h2>
+                </div>
+                <p class="helper-text">L/d ratio method. Must satisfy: Actual L/d ≤ Basic × MF_t × MF_c.</p>
+                <div class="panel-grid">
+                    <div class="form-group"><label>Span (m)</label><input type="number" id="df-span" value="4.0"
+                            step="0.5"></div>
+                    <div class="form-group"><label>Slab Thickness (m)</label><input type="number" id="df-thick"
+                            value="0.5" step="0.05"></div>
+                    <div class="form-group"><label>Support</label><select id="df-support">
+                            <option value="CONTINUOUS">Continuous</option>
+                            <option value="SIMPLY_SUPPORTED">Simply Supported</option>
+                            <option value="CANTILEVER">Cantilever</option>
+                        </select></div>
+                    <div class="form-group"><label>fck (MPa)</label><input type="number" id="df-fck" value="30"></div>
+                </div>
+                <button class="btn btn-primary" onclick="calcDeflection()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-chart" />
+                    </svg> Check</button>
+                <div id="df-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card accent"><span class="summary-value" id="df-actual">—</span><span
+                                class="summary-label">Actual L/d</span></div>
+                        <div class="summary-card"><span class="summary-value" id="df-allow">—</span><span
+                                class="summary-label">Allowable L/d</span></div>
+                        <div class="summary-card"><span class="summary-value" id="df-status">—</span><span
+                                class="summary-label">Status</span></div>
+                    </div>
+                    <div class="code-preview" id="df-formula" style="max-height:250px; white-space:pre-line"></div>
+                </div>
+            </div>
+
+            <!-- Soil Springs -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-layers" />
+                        </svg> Soil Spring Calculator (Winkler)</h2>
+                </div>
+                <p class="helper-text">Compute spring stiffness for elastic foundation model in STAAD.</p>
+                <div class="panel-grid">
+                    <div class="form-group"><label>Base Width (m)</label><input type="number" id="ss-width" value="5.0"
+                            step="0.5"></div>
+                    <div class="form-group"><label>Soil Type</label><select id="ss-soil">
+                            <option value="LOOSE_SAND">Loose Sand</option>
+                            <option value="MEDIUM_SAND">Medium Sand</option>
+                            <option value="DENSE_SAND">Dense Sand</option>
+                            <option value="SOFT_CLAY">Soft Clay</option>
+                            <option value="MEDIUM_CLAY" selected>Medium Clay</option>
+                            <option value="STIFF_CLAY">Stiff Clay</option>
+                        </select></div>
+                    <div class="form-group"><label>Custom ks (0=auto)</label><input type="number" id="ss-ks" value="0">
+                    </div>
+                    <div class="form-group"><label>Nodes</label><input type="number" id="ss-nodes" value="10" min="3"
+                            max="50"></div>
+                </div>
+                <button class="btn btn-primary" onclick="calcSoilSprings()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-layers" />
+                    </svg> Calculate</button>
+                <div id="ss-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card accent"><span class="summary-value" id="ss-ks-val">—</span><span
+                                class="summary-label">ks (kN/m³)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="ss-spring">—</span><span
+                                class="summary-label">K_spring (kN/m)</span></div>
+                    </div>
+                    <div class="code-preview" id="ss-formula" style="max-height:250px; white-space:pre-line"></div>
+                </div>
+            </div>
+
+            <!-- Clear Cover -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-wrench" />
+                        </svg> Clear Cover (IS 456 Table 16)</h2>
+                </div>
+                <p class="helper-text">Auto-suggest min cover, grade, W/C ratio based on exposure.</p>
+                <div class="panel-grid">
+                    <div class="form-group"><label>Exposure</label><select id="cc-exposure">
+                            <option value="MILD">Mild</option>
+                            <option value="MODERATE">Moderate</option>
+                            <option value="SEVERE" selected>Severe</option>
+                            <option value="VERY_SEVERE">Very Severe</option>
+                            <option value="EXTREME">Extreme</option>
+                        </select></div>
+                    <div class="form-group"><label>Element</label><select id="cc-element">
+                            <option value="SLAB">Top Slab</option>
+                            <option value="BOTTOM_SLAB">Bottom Slab</option>
+                            <option value="WALL">Side Wall</option>
+                        </select></div>
+                </div>
+                <button class="btn btn-primary" onclick="calcClearCover()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-wrench" />
+                    </svg> Suggest</button>
+                <div id="cc-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card accent"><span class="summary-value" id="cc-cover">—</span><span
+                                class="summary-label">Cover (mm)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="cc-grade">—</span><span
+                                class="summary-label">Min Grade</span></div>
+                        <div class="summary-card"><span class="summary-value" id="cc-wc">—</span><span
+                                class="summary-label">Max W/C</span></div>
+                        <div class="summary-card"><span class="summary-value" id="cc-cement">—</span><span
+                                class="summary-label">Min Cement</span></div>
+                    </div>
+                    <p class="helper-text" id="cc-notes" style="margin-top:8px"></p>
+                </div>
+            </div>
+
+            <!-- Settlement -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-chart" />
+                        </svg> Settlement Calculator (IS 1904)</h2>
+                </div>
+                <p class="helper-text">Immediate + consolidation settlement vs permissible limits.</p>
+                <div class="panel-grid">
+                    <div class="form-group"><label>Base Pressure (kN/m²)</label><input type="number" id="st-pressure"
+                            value="100" step="10"></div>
+                    <div class="form-group"><label>Base Width (m)</label><input type="number" id="st-width" value="5.0"
+                            step="0.5"></div>
+                    <div class="form-group"><label>Soil Type</label><select id="st-soil">
+                            <option value="LOOSE_SAND">Loose Sand</option>
+                            <option value="MEDIUM_SAND">Medium Sand</option>
+                            <option value="MEDIUM_CLAY" selected>Medium Clay</option>
+                            <option value="STIFF_CLAY">Stiff Clay</option>
+                        </select></div>
+                    <div class="form-group"><label>Es (kN/m², 0=auto)</label><input type="number" id="st-es" value="0">
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="calcSettlement()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-chart" />
+                    </svg> Calculate</button>
+                <div id="st-result" style="display:none; margin-top:16px">
+                    <div class="summary-cards">
+                        <div class="summary-card accent"><span class="summary-value" id="st-total">—</span><span
+                                class="summary-label">Total (mm)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="st-imm">—</span><span
+                                class="summary-label">Immediate (mm)</span></div>
+                        <div class="summary-card"><span class="summary-value" id="st-cons">—</span><span
+                                class="summary-label">Consolidation</span></div>
+                        <div class="summary-card"><span class="summary-value" id="st-status">—</span><span
+                                class="summary-label">Status</span></div>
+                    </div>
+                    <div class="code-preview" id="st-formula" style="max-height:250px; white-space:pre-line"></div>
+                </div>
+            </div>
+
         </section>
 
     </main>
