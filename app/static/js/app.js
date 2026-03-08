@@ -275,7 +275,7 @@ function collectSettings() {
 
 async function runCalculation() {
     const btn = document.getElementById('calc-btn');
-    btn.textContent = '⏳ Calculating...';
+    btn.innerHTML = '<svg class="icon"><use href="#i-play"/></svg> Calculating...';
     btn.disabled = true;
 
     try {
@@ -336,7 +336,7 @@ async function runCalculation() {
     } catch (e) {
         alert('Calculation error: ' + e.message);
     } finally {
-        btn.textContent = '▶ Calculate Overlaps';
+        btn.innerHTML = '<svg class="icon"><use href="#i-play"/></svg> Calculate Overlaps';
         btn.disabled = false;
     }
 }
@@ -387,8 +387,7 @@ function copySTAAD() {
     const text = document.getElementById('staad-preview').textContent;
     navigator.clipboard.writeText(text).then(() => {
         const btn = event.target;
-        btn.textContent = '✓ Copied';
-        setTimeout(() => btn.textContent = '📋 Copy', 1500);
+        btn.textContent = 'Copied';
     });
 }
 
@@ -901,7 +900,7 @@ function copyText(elementId) {
     navigator.clipboard.writeText(text).then(() => {
         const btn = event.target;
         const orig = btn.textContent;
-        btn.textContent = '✅ Copied!';
+        btn.textContent = 'Copied!';
         setTimeout(() => { btn.textContent = orig; }, 2000);
     });
 }

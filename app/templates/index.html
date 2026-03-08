@@ -16,6 +16,150 @@
 </head>
 
 <body>
+    <!-- SVG Icon Sprite (hidden) -->
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+        <symbol id="i-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
+            <polyline points="17 21 17 13 7 13 7 21" />
+            <polyline points="7 3 7 8 15 8" />
+        </symbol>
+        <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+        </symbol>
+        <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
+        </symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path
+                d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+        </symbol>
+        <symbol id="i-ruler" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.73 18l-8-14a2 2 0 00-3.46 0l-8 14A2 2 0 004 21h16a2 2 0 001.73-3z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+        </symbol>
+        <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+        </symbol>
+        <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6" y1="20" x2="6" y2="14" />
+            <line x1="2" y1="20" x2="22" y2="20" />
+        </symbol>
+        <symbol id="i-file-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+            <polyline points="10 9 9 9 8 9" />
+        </symbol>
+        <symbol id="i-table" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <line x1="3" y1="9" x2="21" y2="9" />
+            <line x1="3" y1="15" x2="21" y2="15" />
+            <line x1="9" y1="3" x2="9" y2="21" />
+            <line x1="15" y1="3" x2="15" y2="21" />
+        </symbol>
+        <symbol id="i-brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path
+                d="M12 2a5 5 0 015 5c0 1.1-.4 2.1-1 2.9a5 5 0 011 7.1 5 5 0 01-5 5 5 5 0 01-5-5 5 5 0 011-7.1A5 5 0 017 7a5 5 0 015-5z" />
+            <path d="M12 2v20" />
+        </symbol>
+        <symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+        </symbol>
+        <symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+        </symbol>
+        <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </symbol>
+        <symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path
+                d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" />
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+            <line x1="12" y1="22.08" x2="12" y2="12" />
+        </symbol>
+        <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+        </symbol>
+        <symbol id="i-wrench" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path
+                d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />
+        </symbol>
+        <symbol id="i-compass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+        </symbol>
+        <symbol id="i-file-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <polyline points="10 12 8 14 10 16" />
+            <polyline points="14 12 16 14 14 16" />
+        </symbol>
+        <symbol id="i-clipboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" />
+            <rect x="8" y="2" width="8" height="4" rx="1" />
+        </symbol>
+        <symbol id="i-microscope" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 18h8" />
+            <path d="M3 22h18" />
+            <path d="M14 22a7 7 0 100-14h-1" />
+            <path d="M9 14h2" />
+            <path d="M9 12a2 2 0 01-2-2V6h6v4a2 2 0 01-2 2z" />
+            <path d="M12 6V3a1 1 0 00-1-1H9a1 1 0 00-1 1v3" />
+        </symbol>
+        <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3" />
+        </symbol>
+        <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" />
+            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+        </symbol>
+        <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" />
+            <rect x="14" y="3" width="7" height="7" />
+            <rect x="14" y="14" width="7" height="7" />
+            <rect x="3" y="14" width="7" height="7" />
+        </symbol>
+        <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 2 7 12 12 22 7 12 2" />
+            <polyline points="2 17 12 22 22 17" />
+            <polyline points="2 12 12 17 22 12" />
+        </symbol>
+    </svg>
+
     <!-- Header -->
     <header class="app-header">
         <div class="header-brand">
@@ -35,11 +179,15 @@
         </div>
         <div class="header-actions">
             <button class="btn btn-ghost" onclick="saveProject()" title="Save Project">
-                <span class="btn-icon">💾</span> Save
+                <svg class="icon">
+                    <use href="#i-save" />
+                </svg> Save
             </button>
             <button class="btn btn-ghost" onclick="document.getElementById('load-project-input').click()"
                 title="Load Project">
-                <span class="btn-icon">📂</span> Load
+                <svg class="icon">
+                    <use href="#i-folder" />
+                </svg> Load
             </button>
             <input type="file" id="load-project-input" accept=".json" style="display:none"
                 onchange="loadProject(event)">
@@ -49,28 +197,44 @@
     <!-- Tab Navigation -->
     <nav class="tab-nav">
         <button class="tab-btn active" data-tab="guide" onclick="switchTab('guide')">
-            <span class="tab-icon">📖</span> User Guide
+            <svg class="icon">
+                <use href="#i-book" />
+            </svg> User Guide
         </button>
         <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">
-            <span class="tab-icon">⚙️</span> Project Settings
+            <svg class="icon">
+                <use href="#i-settings" />
+            </svg> Project Settings
         </button>
         <button class="tab-btn" data-tab="geometry" onclick="switchTab('geometry')">
-            <span class="tab-icon">📐</span> Geometry / Members
+            <svg class="icon">
+                <use href="#i-compass" />
+            </svg> Geometry / Members
         </button>
         <button class="tab-btn" data-tab="loads" onclick="switchTab('loads')">
-            <span class="tab-icon">⬇️</span> Loads
+            <svg class="icon">
+                <use href="#i-download" />
+            </svg> Loads
         </button>
         <button class="tab-btn" data-tab="results" onclick="switchTab('results')">
-            <span class="tab-icon">📊</span> Results
+            <svg class="icon">
+                <use href="#i-chart" />
+            </svg> Results
         </button>
         <button class="tab-btn" data-tab="staad" onclick="switchTab('staad')">
-            <span class="tab-icon">📝</span> STAAD Export
+            <svg class="icon">
+                <use href="#i-file-text" />
+            </svg> STAAD Export
         </button>
         <button class="tab-btn" data-tab="excel" onclick="switchTab('excel')">
-            <span class="tab-icon">📗</span> Excel Export
+            <svg class="icon">
+                <use href="#i-table" />
+            </svg> Excel Export
         </button>
         <button class="tab-btn" data-tab="smart" onclick="switchTab('smart')">
-            <span class="tab-icon">🧠</span> Smart Tools
+            <svg class="icon">
+                <use href="#i-brain" />
+            </svg> Smart Tools
         </button>
     </nav>
 
@@ -82,7 +246,9 @@
 
             <!-- Quick Start -->
             <div class="card guide-card">
-                <h2 class="card-title">🚀 Quick Start — For Practicing Structural Engineers</h2>
+                <h2 class="card-title"><svg class="icon">
+                        <use href="#i-play" />
+                    </svg> Quick Start — For Practicing Structural Engineers</h2>
                 <p class="card-desc">This tool automates the tedious manual calculation of <strong>partial load
                         overlap</strong> across bridge deck strips / STAAD members. Instead of hand-calculating d1/d2
                     distances for every member-load pair, you define members and loads once — the engine computes all
@@ -130,7 +296,9 @@
 
             <!-- What Problem This Solves -->
             <div class="card guide-card">
-                <h2 class="card-title">🎯 What Problem Does This Solve?</h2>
+                <h2 class="card-title"><svg class="icon">
+                        <use href="#i-search" />
+                    </svg> What Problem Does This Solve?</h2>
                 <div class="guide-problem">
                     <div class="problem-before">
                         <h3 class="problem-heading problem-red">❌ Without This Tool (Manual Method)</h3>
@@ -159,7 +327,9 @@
 
             <!-- Tab-by-Tab Guide -->
             <div class="card guide-card">
-                <h2 class="card-title">📋 Detailed Tab-by-Tab Guide</h2>
+                <h2 class="card-title"><svg class="icon">
+                        <use href="#i-clipboard" />
+                    </svg> Detailed Tab-by-Tab Guide</h2>
 
                 <!-- Settings Guide -->
                 <div class="guide-section">
@@ -534,7 +704,9 @@
 
             <!-- Formulas & Standards Reference -->
             <div class="card guide-card">
-                <h2 class="card-title">📐 Engineering Formulas & Standards Used</h2>
+                <h2 class="card-title"><svg class="icon">
+                        <use href="#i-compass" />
+                    </svg> Engineering Formulas & Standards Used</h2>
 
                 <div class="guide-section">
                     <h3 class="guide-section-title">Core Overlap Algorithm</h3>
@@ -624,7 +796,9 @@
 
             <!-- IRC Load Factors Reference -->
             <div class="card guide-card">
-                <h2 class="card-title">📊 IRC 6:2017 — Partial Safety Factors for Load Combinations</h2>
+                <h2 class="card-title"><svg class="icon">
+                        <use href="#i-chart" />
+                    </svg> IRC 6:2017 — Partial Safety Factors for Load Combinations</h2>
                 <p class="card-desc">These factors are applied in STAAD.Pro load combinations. This tool generates
                     <strong>unfactored</strong> load intensities — you apply factors in STAAD.Pro's
                     <code>LOAD COMBINATION</code> section.
@@ -756,7 +930,9 @@
 
             <!-- Box Culvert Design Workflow -->
             <div class="card guide-card">
-                <h2 class="card-title">🏗️ Box Culvert — Complete Design Workflow Using This Tool</h2>
+                <h2 class="card-title"><svg class="icon">
+                        <use href="#i-layers" />
+                    </svg> Box Culvert — Complete Design Workflow Using This Tool</h2>
                 <p class="card-desc">A step-by-step guide for structural engineers designing RCC box culverts. This tool
                     handles <strong>Steps 4-5</strong> (load distribution and STAAD input generation).</p>
 
@@ -975,7 +1151,9 @@
                 </div>
             </div>
             <div class="card guide-card">
-                <h2 class="card-title">🔴 Important Disclaimers for Professional Use</h2>
+                <h2 class="card-title"><svg class="icon" style="color:#f87171">
+                        <use href="#i-check" />
+                    </svg> Important Disclaimers for Professional Use</h2>
                 <div class="guide-callout guide-callout-danger">
                     <ol style="margin:0 0 0 20px; line-height:2.2;">
                         <li><strong>Independent Verification Required:</strong> This tool computes transverse load
@@ -1307,7 +1485,9 @@
             <!-- Calculate Button -->
             <div class="action-bar">
                 <button class="btn btn-primary btn-lg" onclick="runCalculation()" id="calc-btn">
-                    ▶ Calculate Overlaps
+                    <svg class="icon">
+                        <use href="#i-play" />
+                    </svg> Calculate Overlaps
                 </button>
             </div>
 
@@ -1326,7 +1506,9 @@
 
             <!-- STAAD.Pro-Style Frame Visualization -->
             <div class="card" id="results-frame-card" style="display:none">
-                <h2 class="card-title">🔬 STAAD.Pro Frame Visualization</h2>
+                <h2 class="card-title"><svg class="icon">
+                        <use href="#i-microscope" />
+                    </svg> STAAD.Pro Frame Visualization</h2>
                 <p class="helper-text">Visual representation of your load-member model as it would appear in STAAD.Pro.
                     Shows load patches, member strips, overlap zones, d1/d2 distances, and intensities from your actual
                     calculation data.</p>
@@ -1371,8 +1553,12 @@
                 <div class="card-header">
                     <h2 class="card-title">STAAD.Pro Member Load Commands</h2>
                     <div class="card-actions">
-                        <button class="btn btn-sm btn-primary" onclick="downloadSTAAD()">⬇ Download .txt</button>
-                        <button class="btn btn-sm btn-ghost" onclick="copySTAAD()">📋 Copy</button>
+                        <button class="btn btn-sm btn-primary" onclick="downloadSTAAD()"><svg class="icon">
+                                <use href="#i-download" />
+                            </svg> Download .txt</button>
+                        <button class="btn btn-sm btn-ghost" onclick="copySTAAD()"><svg class="icon">
+                                <use href="#i-copy" />
+                            </svg> Copy</button>
                     </div>
                 </div>
                 <p class="helper-text">Copy the text below and paste into your STAAD.Pro command file under the
@@ -1407,9 +1593,15 @@
                     <p class="helper-text">Save your work as a JSON project file to reload later, or export raw CSV data
                         for custom post-processing in other tools.</p>
                     <div class="export-buttons">
-                        <button class="btn btn-primary" onclick="downloadCSV()">📄 Download CSV</button>
-                        <button class="btn btn-primary" onclick="downloadSTAAD()">📝 Download STAAD .txt</button>
-                        <button class="btn btn-ghost" onclick="saveProject()">💾 Save Project JSON</button>
+                        <button class="btn btn-primary" onclick="downloadCSV()"><svg class="icon">
+                                <use href="#i-file-text" />
+                            </svg> Download CSV</button>
+                        <button class="btn btn-primary" onclick="downloadSTAAD()"><svg class="icon">
+                                <use href="#i-file-text" />
+                            </svg> Download STAAD .txt</button>
+                        <button class="btn btn-ghost" onclick="saveProject()"><svg class="icon">
+                                <use href="#i-save" />
+                            </svg> Save Project JSON</button>
                     </div>
                 </div>
             </div>
@@ -1421,7 +1613,9 @@
             <!-- Impact Factor Calculator -->
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">⚡ Impact Factor Calculator (IRC 6, Cl. 208)</h2>
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-zap" />
+                        </svg> Impact Factor Calculator (IRC 6, Cl. 208)</h2>
                 </div>
                 <p class="helper-text">Auto-compute the impact factor based on vehicle class, span, and fill depth. Fill
                     > 600mm → no impact per IRC 112.</p>
@@ -1453,7 +1647,9 @@
                         </select>
                     </div>
                 </div>
-                <button class="btn btn-primary" onclick="calcImpactFactor()" style="margin-top:16px">⚡ Calculate Impact
+                <button class="btn btn-primary" onclick="calcImpactFactor()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-zap" />
+                    </svg> Calculate Impact
                     Factor</button>
                 <div id="if-result" style="display:none; margin-top:16px">
                     <div class="summary-cards">
@@ -1469,7 +1665,9 @@
             <!-- Load Combination Generator -->
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">🔗 Load Combination Generator (IRC 6:2017)</h2>
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-link" />
+                        </svg> Load Combination Generator (IRC 6:2017)</h2>
                 </div>
                 <p class="helper-text">Generate STAAD.Pro LOAD COMBINATION blocks with correct ULS/SLS factors. Map your
                     load case numbers below.</p>
@@ -1486,11 +1684,17 @@
                             <option value="false">No</option>
                         </select></div>
                 </div>
-                <button class="btn btn-primary" onclick="genLoadCombinations()" style="margin-top:16px">🔗 Generate
+                <button class="btn btn-primary" onclick="genLoadCombinations()" style="margin-top:16px"><svg
+                        class="icon">
+                        <use href="#i-link" />
+                    </svg> Generate
                     Combinations</button>
                 <div id="lc-result" style="display:none; margin-top:16px">
                     <div class="code-preview" id="lc-staad-text" style="max-height:400px"></div>
-                    <button class="btn btn-accent" onclick="copyText('lc-staad-text')" style="margin-top:8px">📋 Copy
+                    <button class="btn btn-accent" onclick="copyText('lc-staad-text')" style="margin-top:8px"><svg
+                            class="icon">
+                            <use href="#i-copy" />
+                        </svg> Copy
                         STAAD Text</button>
                 </div>
             </div>
@@ -1498,7 +1702,9 @@
             <!-- Load Dispersion Calculator -->
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">🔍 Load Dispersion Through Fill (IRC 112)</h2>
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-search" />
+                        </svg> Load Dispersion Through Fill (IRC 112)</h2>
                 </div>
                 <p class="helper-text">45° dispersion through fill and wearing course. Adjusts contact area and
                     intensity automatically.</p>
@@ -1514,7 +1720,9 @@
                     <div class="form-group"><label>Wearing Course (m)</label><input type="number" id="disp-wc"
                             value="0.075" step="0.005"></div>
                 </div>
-                <button class="btn btn-primary" onclick="calcDispersion()" style="margin-top:16px">🔍 Calculate
+                <button class="btn btn-primary" onclick="calcDispersion()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-search" />
+                    </svg> Calculate
                     Dispersion</button>
                 <div id="disp-result" style="display:none; margin-top:16px">
                     <div class="summary-cards">
@@ -1532,7 +1740,9 @@
             <!-- Quantity Estimator -->
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">📦 Concrete Quantity Estimator (BOQ)</h2>
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-box" />
+                        </svg> Concrete Quantity Estimator (BOQ)</h2>
                 </div>
                 <p class="helper-text">Estimate concrete, formwork, and steel quantities for box culvert from basic
                     dimensions.</p>
@@ -1554,7 +1764,9 @@
                     <div class="form-group"><label>Haunch Size (m)</label><input type="number" id="qty-haunch"
                             value="0.15" step="0.05"></div>
                 </div>
-                <button class="btn btn-primary" onclick="calcQuantities()" style="margin-top:16px">📦 Estimate
+                <button class="btn btn-primary" onclick="calcQuantities()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-box" />
+                    </svg> Estimate
                     Quantities</button>
                 <div id="qty-result" style="display:none; margin-top:16px">
                     <div class="summary-cards">
@@ -1588,7 +1800,9 @@
             <!-- Design Checks -->
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">✅ Design Checks (Bearing & Uplift)</h2>
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-check" />
+                        </svg> Design Checks (Bearing & Uplift)</h2>
                 </div>
                 <p class="helper-text">Quick pass/fail checks for base pressure and buoyancy stability.</p>
                 <div class="panel-grid">
@@ -1617,7 +1831,9 @@
                         </div>
                     </div>
                 </div>
-                <button class="btn btn-primary" onclick="runDesignChecks()" style="margin-top:16px">✅ Run Design
+                <button class="btn btn-primary" onclick="runDesignChecks()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-check" />
+                    </svg> Run Design
                     Checks</button>
                 <div id="dc-result" style="display:none; margin-top:16px">
                     <div class="summary-cards" id="dc-cards"></div>
@@ -1627,7 +1843,9 @@
             <!-- Reinforcement Helper -->
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">🔩 Reinforcement Helper (IS 456 / IRC 112)</h2>
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-wrench" />
+                        </svg> Reinforcement Helper (IS 456 / IRC 112)</h2>
                 </div>
                 <p class="helper-text">Input max BM from STAAD analysis results → get suggested bar dia & spacing. This
                     is a helper, NOT a design tool — always verify independently.</p>
@@ -1650,7 +1868,9 @@
                             step="5"></div>
                     <div class="form-group"><label>fy (MPa)</label><input type="number" id="rh-fy" value="500"></div>
                 </div>
-                <button class="btn btn-primary" onclick="calcReinforcement()" style="margin-top:16px">🔩 Calculate
+                <button class="btn btn-primary" onclick="calcReinforcement()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-wrench" />
+                    </svg> Calculate
                     Reinforcement</button>
                 <div id="rh-result" style="display:none; margin-top:16px">
                     <div class="summary-cards">
@@ -1668,7 +1888,9 @@
             <!-- Skew Correction -->
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">📐 Skew Angle Correction</h2>
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-compass" />
+                        </svg> Skew Angle Correction</h2>
                 </div>
                 <p class="helper-text">Compute correction factors for skewed box culverts. BM and SF increase with skew
                     angle.</p>
@@ -1678,7 +1900,9 @@
                     <div class="form-group"><label>Normal Span (m)</label><input type="number" id="sk-span" value="4.0"
                             step="0.1"></div>
                 </div>
-                <button class="btn btn-primary" onclick="calcSkew()" style="margin-top:16px">📐 Compute Skew
+                <button class="btn btn-primary" onclick="calcSkew()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-compass" />
+                    </svg> Compute Skew
                     Factors</button>
                 <div id="sk-result" style="display:none; margin-top:16px">
                     <div class="summary-cards">
@@ -1696,7 +1920,9 @@
             <!-- STAAD File Generator -->
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">📄 STAAD .std File Generator</h2>
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-file-code" />
+                        </svg> STAAD .std File Generator</h2>
                 </div>
                 <p class="helper-text">Generate a complete STAAD.Pro input file for 2D frame model of box culvert. Open
                     directly in STAAD.</p>
@@ -1716,10 +1942,16 @@
                     <div class="form-group"><label>fck (MPa)</label><input type="number" id="std-fck" value="30"></div>
                 </div>
                 <div style="display:flex;gap:8px;margin-top:16px">
-                    <button class="btn btn-primary" onclick="genSTAADFile(false)">📄 Preview</button>
-                    <button class="btn btn-accent" onclick="genSTAADFile(true)">💾 Download .std</button>
+                    <button class="btn btn-primary" onclick="genSTAADFile(false)"><svg class="icon">
+                            <use href="#i-file-text" />
+                        </svg> Preview</button>
+                    <button class="btn btn-accent" onclick="genSTAADFile(true)"><svg class="icon">
+                            <use href="#i-save" />
+                        </svg> Download .std</button>
                     <button class="btn btn-primary" onclick="renderStaadVisualization()"
-                        style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">🔬 Visualize Frame</button>
+                        style="background:linear-gradient(135deg,#6366f1,#8b5cf6)"><svg class="icon">
+                            <use href="#i-microscope" />
+                        </svg> Visualize Frame</button>
                 </div>
                 <div id="staad-viz-container" style="display:none; margin-top:16px">
                     <canvas id="staad-viz-canvas"
@@ -1733,7 +1965,9 @@
             <!-- BBS Helper -->
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">📋 Bar Bending Schedule (BBS) Helper</h2>
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-clipboard" />
+                        </svg> Bar Bending Schedule (BBS) Helper</h2>
                 </div>
                 <p class="helper-text">Auto-generate approximate BBS from culvert dimensions. For preliminary estimation
                     only — verify with detailed design.</p>
@@ -1762,7 +1996,9 @@
                     <div class="form-group"><label>Dist Spacing (mm)</label><input type="number" id="bbs-ds" value="200"
                             step="25"></div>
                 </div>
-                <button class="btn btn-primary" onclick="genBBS()" style="margin-top:16px">📋 Generate BBS</button>
+                <button class="btn btn-primary" onclick="genBBS()" style="margin-top:16px"><svg class="icon">
+                        <use href="#i-clipboard" />
+                    </svg> Generate BBS</button>
                 <div id="bbs-result" style="display:none; margin-top:16px">
                     <div class="summary-cards">
                         <div class="summary-card accent"><span class="summary-value" id="bbs-total">—</span><span
