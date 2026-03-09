@@ -91,7 +91,7 @@ def compute_overlaps(
                         intensity_at_end = round(
                             effective_load.intensity + t_end * i_range, precision
                         )
-                        staad_fmt = STAADFormat.LIN
+                        staad_fmt = STAADFormat.TRAP
                     else:
                         intensity_at_end = None
                 else:

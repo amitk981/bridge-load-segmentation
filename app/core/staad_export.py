@@ -5,7 +5,7 @@ Output format matches STAAD.Pro syntax:
     LOAD <n> LOADTYPE <type> TITLE <title>
     MEMBER LOAD
     <member_id> UNI <dir> <f1> <d1> <d2>
-    <member_id> LIN <dir> <w1> <w2> <d1> <d2>
+    <member_id> TRAP <dir> <w1> <w2> <d1> <d2>
 
 Both d1 and d2 are measured from the member start node.
 """
@@ -28,8 +28,8 @@ def generate_staad_text(
     Format for UNI loads:
         member_id UNI direction intensity d1 d2
 
-    Format for LIN (trapezoidal) loads:
-        member_id LIN direction w1 w2 d1 d2
+    Format for TRAP (trapezoidal) loads:
+        member_id TRAP direction w1 w2 d1 d2
 
     Args:
         overlaps: List of computed overlap results
@@ -88,14 +88,14 @@ def generate_staad_text(
 
         # Sort by member ID for clean output
         for r in sorted(results, key=lambda x: x.member_id):
-            if r.staad_format == STAADFormat.LIN and r.intensity_end is not None:
-                # Trapezoidal: member LIN dir w1 w2 d1 d2
+            if r.staad_format == STAADFormat.TRAP and r.intensity_end is not None:
+                # Trapezoidal: member TRAP dir w1 w2 d1 d2
                 w1 = _fmt(r.intensity, precision)
                 w2 = _fmt(r.intensity_end, precision)
                 d1 = _fmt(r.front_distance, precision)
                 d2 = _fmt(r.back_distance, precision)
                 lines.append(
-                    f"{r.member_id} LIN {r.direction.value} {w1} {w2} {d1} {d2}"
+                    f"{r.member_id} TRAP {r.direction.value} {w1} {w2} {d1} {d2}"
                 )
             else:
                 # Uniform: member UNI dir f1 d1 d2

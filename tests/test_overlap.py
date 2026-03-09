@@ -132,7 +132,7 @@ class TestOverlap:
         # First member (0-1): intensity 0 to 9
         assert abs(results[0].intensity - 0.0) < 0.01
         assert abs(results[0].intensity_end - 9.0) < 0.01
-        assert results[0].staad_format == STAADFormat.LIN
+        assert results[0].staad_format == STAADFormat.TRAP
 
         # Second member (1-2): intensity 9 to 18
         assert abs(results[1].intensity - 9.0) < 0.01
@@ -215,7 +215,7 @@ class TestTemplates:
         load = earth_pressure_load(height=3.0)
         assert load.intensity == 0.0
         assert load.intensity_end == 0.5 * 18.0 * 3.0  # K0*gamma*H = 27
-        assert load.staad_format == STAADFormat.LIN
+        assert load.staad_format == STAADFormat.TRAP
 
     def test_water_pressure(self):
         load = water_pressure_load(water_height=3.0)
@@ -242,7 +242,7 @@ class TestSTAADExport:
                          intensity_end=27.0, direction=LoadDirection.GX)
         overlaps = compute_overlaps(members, [load])
         text = generate_staad_text(overlaps)
-        assert "LIN GX" in text
+        assert "TRAP GX" in text
 
     def test_empty_overlaps(self):
         text = generate_staad_text([])

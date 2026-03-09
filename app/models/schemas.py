@@ -70,9 +70,10 @@ class MemberGroup(str, Enum):
 
 
 class STAADFormat(str, Enum):
-    """UNI = uniform load, LIN = linear/trapezoidal varying load."""
+    """UNI = uniform, LIN = full-member linear, TRAP = partial trapezoidal."""
     UNI = "UNI"
     LIN = "LIN"
+    TRAP = "TRAP"
 
 
 class CoordinateUnit(str, Enum):
@@ -183,9 +184,9 @@ class LoadPatch(BaseModel):
 
     @property
     def staad_format(self) -> STAADFormat:
-        """Determine if this should be exported as UNI or LIN in STAAD."""
+        """Determine if this should be exported as UNI or TRAP in STAAD."""
         if self.intensity_end is not None and self.intensity_end != self.intensity:
-            return STAADFormat.LIN
+            return STAADFormat.TRAP
         return STAADFormat.UNI
 
 
