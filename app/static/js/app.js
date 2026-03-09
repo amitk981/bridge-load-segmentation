@@ -878,6 +878,7 @@ async function genSTAADFile(download) {
             top_slab_thickness: parseFloat(document.getElementById('std-top').value),
             bottom_slab_thickness: parseFloat(document.getElementById('std-bot').value),
             wall_thickness: parseFloat(document.getElementById('std-wall').value),
+            mid_wall_thickness: parseFloat(document.getElementById('std-mid-wall').value),
             num_cells: parseInt(document.getElementById('std-cells').value),
             fck: parseFloat(document.getElementById('std-fck').value),
             download: download,

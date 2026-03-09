@@ -46,13 +46,14 @@ const StaadViz = (() => {
         const cs = params.clear_span || 4.0;
         const ch = params.clear_height || 3.0;
         const tw = params.wall_thickness || 0.3;
+        const mw = params.mid_wall_thickness !== undefined ? params.mid_wall_thickness : tw;
         const ts = params.top_slab || 0.3;
         const bs = params.bottom_slab || 0.35;
         const nc = params.num_cells || 1;
         const fd = params.fill_depth || 0;
         const fck = params.fck || 30;
 
-        const totalW = nc * cs + (nc + 1) * tw;
+        const totalW = nc * cs + 2 * tw + Math.max(0, nc - 1) * mw;
         const totalH = ch + ts + bs;
 
         // ── Coordinate mapping ──
@@ -98,17 +99,26 @@ const StaadViz = (() => {
 
         // Bottom joints (left to right)
         for (let c = 0; c <= nc; c++) {
-            const x_outer_left = c * (cs + tw);
-            const x_inner = x_outer_left + (c === 0 ? 0 : 0);
+            let x_outer_left = 0;
+            if (c === 0) x_outer_left = 0;
+            else if (c === nc) x_outer_left = nc * cs + tw + (nc - 1) * mw;
+            else x_outer_left = c * cs + tw + (c - 1) * mw;
+            
+            const wallThick = (c === 0 || c === nc) ? tw : mw;
             joints.push({ id: jid++, x: x_outer_left, y: 0, label: 'B' });
-            joints.push({ id: jid++, x: x_outer_left + tw, y: 0, label: 'B' });
+            joints.push({ id: jid++, x: x_outer_left + wallThick, y: 0, label: 'B' });
         }
 
         // Top joints (left to right)
         for (let c = 0; c <= nc; c++) {
-            const x_outer_left = c * (cs + tw);
+            let x_outer_left = 0;
+            if (c === 0) x_outer_left = 0;
+            else if (c === nc) x_outer_left = nc * cs + tw + (nc - 1) * mw;
+            else x_outer_left = c * cs + tw + (c - 1) * mw;
+            
+            const wallThick = (c === 0 || c === nc) ? tw : mw;
             joints.push({ id: jid++, x: x_outer_left, y: bs + ch, label: 'T' });
-            joints.push({ id: jid++, x: x_outer_left + tw, y: bs + ch, label: 'T' });
+            joints.push({ id: jid++, x: x_outer_left + wallThick, y: bs + ch, label: 'T' });
         }
 
         // ── Define members ──
@@ -134,20 +144,23 @@ const StaadViz = (() => {
             // Left face of wall c — bottom to top
             const bj = c * 2; // bottom joint index
             const tj = bottomCount + c * 2; // top joint index
+            const wallThick = (c === 0 || c === nc) ? tw : mw;
+            const groupType = c === 0 ? 'LEFT_WALL' : (c === nc ? 'RIGHT_WALL' : 'INTERMEDIATE_WALL');
+            
             members.push({
                 id: mid++,
                 j1: joints[bj],
                 j2: joints[tj],
-                group: c === 0 ? 'LEFT_WALL' : (c === nc ? 'RIGHT_WALL' : 'MID_WALL'),
-                thickness: tw,
+                group: groupType,
+                thickness: wallThick,
             });
             // Right face
             members.push({
                 id: mid++,
                 j1: joints[bj + 1],
                 j2: joints[tj + 1],
-                group: c === 0 ? 'LEFT_WALL' : (c === nc ? 'RIGHT_WALL' : 'MID_WALL'),
-                thickness: tw,
+                group: groupType,
+                thickness: wallThick,
             });
         }
 
@@ -174,8 +187,12 @@ const StaadViz = (() => {
         ctx.fillRect(tx(0), ty(bs + ch + ts), totalW * scale, ts * scale);
         // Wall fills
         for (let c = 0; c <= nc; c++) {
-            const wx = c * (cs + tw);
-            ctx.fillRect(tx(wx), ty(bs + ch), tw * scale, ch * scale);
+            let wx = 0;
+            if (c > 0 && c < nc) wx = c * cs + tw + (c - 1) * mw;
+            else if (c === nc) wx = nc * cs + tw + (nc - 1) * mw;
+            
+            const wallThick = (c === 0 || c === nc) ? tw : mw;
+            ctx.fillRect(tx(wx), ty(bs + ch), wallThick * scale, ch * scale);
         }
 
         ctx.globalAlpha = 1.0;
@@ -190,8 +207,12 @@ const StaadViz = (() => {
         ctx.strokeRect(tx(0), ty(bs + ch + ts), totalW * scale, ts * scale);
         // Walls
         for (let c = 0; c <= nc; c++) {
-            const wx = c * (cs + tw);
-            ctx.strokeRect(tx(wx), ty(bs + ch), tw * scale, ch * scale);
+            let wx = 0;
+            if (c > 0 && c < nc) wx = c * cs + tw + (c - 1) * mw;
+            else if (c === nc) wx = nc * cs + tw + (nc - 1) * mw;
+            
+            const wallThick = (c === 0 || c === nc) ? tw : mw;
+            ctx.strokeRect(tx(wx), ty(bs + ch), wallThick * scale, ch * scale);
         }
 
         // ── Draw member labels ──
@@ -218,13 +239,13 @@ const StaadViz = (() => {
         ctx.fillText(`Right Wall (${tw * 1000}mm)`, 0, 0);
         ctx.restore();
 
-        // Middle wall labels
+        // Intermediate wall labels
         for (let c = 1; c < nc; c++) {
-            const wx = c * (cs + tw) + tw / 2;
+            const wx = c * cs + tw + (c - 1) * mw + mw / 2;
             ctx.save();
             ctx.translate(tx(wx), ty(bs + ch / 2));
             ctx.rotate(-Math.PI / 2);
-            ctx.fillText(`Mid Wall ${c}`, 0, 0);
+            ctx.fillText(`Intermediate Wall ${c} (${mw * 1000}mm)`, 0, 0);
             ctx.restore();
         }
 
@@ -242,13 +263,13 @@ const StaadViz = (() => {
         mainJoints.push({ id: 7, x: tw, y: bs + ch });
         mainJoints.push({ id: 8, x: totalW - tw, y: bs + ch });
 
-        // Middle wall joints
+        // Intermediate wall joints
         for (let c = 1; c < nc; c++) {
-            const wx = c * (cs + tw);
+            const wx = c * cs + tw + (c - 1) * mw;
             mainJoints.push({ id: 8 + c * 4 - 3, x: wx, y: bs });
-            mainJoints.push({ id: 8 + c * 4 - 2, x: wx + tw, y: bs });
+            mainJoints.push({ id: 8 + c * 4 - 2, x: wx + mw, y: bs });
             mainJoints.push({ id: 8 + c * 4 - 1, x: wx, y: bs + ch });
-            mainJoints.push({ id: 8 + c * 4, x: wx + tw, y: bs + ch });
+            mainJoints.push({ id: 8 + c * 4, x: wx + mw, y: bs + ch });
         }
 
         mainJoints.forEach(j => {
@@ -296,8 +317,9 @@ const StaadViz = (() => {
         drawSupport(0, 0);
         drawSupport(totalW, 0);
         for (let c = 1; c < nc; c++) {
-            drawSupport(c * (cs + tw), 0);
-            drawSupport(c * (cs + tw) + tw, 0);
+            const wx = c * cs + tw + (c - 1) * mw;
+            drawSupport(wx, 0);
+            drawSupport(wx + mw, 0);
         }
 
         // ── Draw loads ──
@@ -463,7 +485,10 @@ const StaadViz = (() => {
         // Horizontal: clear span
         const dimY = -1.2;
         for (let c = 0; c < nc; c++) {
-            const x1 = c * (cs + tw) + tw;
+            let x1 = 0;
+            if (c === 0) x1 = tw;
+            else x1 = c * cs + tw + c * mw;
+            
             const x2 = x1 + cs;
 
             ctx.beginPath();
@@ -600,9 +625,9 @@ const StaadViz = (() => {
         // Top slab member ID
         ctx.fillText('M4', tx(totalW / 2), ty(bs + ch + ts / 2) - 10);
 
-        // Middle walls
+        // Intermediate walls member IDs
         for (let c = 1; c < nc; c++) {
-            const wx = c * (cs + tw) + tw / 2;
+            const wx = c * cs + tw + (c - 1) * mw + mw / 2;
             ctx.save();
             ctx.translate(tx(wx), ty(bs + ch / 2));
             ctx.rotate(-Math.PI / 2);
@@ -650,6 +675,7 @@ function renderStaadVisualization() {
         clear_span: parseFloat(document.getElementById('std-span')?.value || '4.0'),
         clear_height: parseFloat(document.getElementById('std-height')?.value || '3.0'),
         wall_thickness: parseFloat(document.getElementById('std-wall')?.value || '0.3'),
+        mid_wall_thickness: parseFloat(document.getElementById('std-mid-wall')?.value || '0.3'),
         top_slab: parseFloat(document.getElementById('std-top')?.value || '0.3'),
         bottom_slab: parseFloat(document.getElementById('std-bot')?.value || '0.35'),
         num_cells: parseInt(document.getElementById('std-cells')?.value || '1'),

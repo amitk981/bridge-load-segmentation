@@ -971,6 +971,7 @@ def generate_staad_file(
     top_slab_thickness: float,
     bottom_slab_thickness: float,
     wall_thickness: float,
+    mid_wall_thickness: float = None,
     num_cells: int = 1,
     fck: float = 30.0,
     member_loads_text: str = "",
@@ -980,7 +981,10 @@ def generate_staad_file(
     Generate a complete STAAD.Pro input file (.std) for a 2D frame model
     of a box culvert.
     """
-    total_width = num_cells * clear_span + (num_cells + 1) * wall_thickness
+    if mid_wall_thickness is None:
+        mid_wall_thickness = wall_thickness
+        
+    total_width = num_cells * clear_span + 2 * wall_thickness + max(0, num_cells - 1) * mid_wall_thickness
     total_height = clear_height + top_slab_thickness + bottom_slab_thickness
 
     lines = []
@@ -1001,24 +1005,40 @@ def generate_staad_file(
 
     # Bottom slab joints
     for c in range(num_cells + 1):
-        x = c * (clear_span + wall_thickness)
+        if c == 0:
+            x = 0.0
+        elif c == num_cells:
+            x = num_cells * clear_span + wall_thickness + (num_cells - 1) * mid_wall_thickness
+        else:
+            x = c * clear_span + wall_thickness + (c - 1) * mid_wall_thickness
+            
+        wall_thick = wall_thickness if (c == 0 or c == num_cells) else mid_wall_thickness
+        
         nodes[f"BL{c}"] = node_id
         lines.append(f"{node_id} {x:.4f} 0.000 0.000")
         node_id += 1
         nodes[f"BR{c}"] = node_id
-        x2 = x + wall_thickness
+        x2 = x + wall_thick
         lines.append(f"{node_id} {x2:.4f} 0.000 0.000")
         node_id += 1
 
     # Top slab joints
     y_top = clear_height + bottom_slab_thickness
     for c in range(num_cells + 1):
-        x = c * (clear_span + wall_thickness)
+        if c == 0:
+            x = 0.0
+        elif c == num_cells:
+            x = num_cells * clear_span + wall_thickness + (num_cells - 1) * mid_wall_thickness
+        else:
+            x = c * clear_span + wall_thickness + (c - 1) * mid_wall_thickness
+            
+        wall_thick = wall_thickness if (c == 0 or c == num_cells) else mid_wall_thickness
+        
         nodes[f"TL{c}"] = node_id
         lines.append(f"{node_id} {x:.4f} {y_top:.4f} 0.000")
         node_id += 1
         nodes[f"TR{c}"] = node_id
-        x2 = x + wall_thickness
+        x2 = x + wall_thick
         lines.append(f"{node_id} {x2:.4f} {y_top:.4f} 0.000")
         node_id += 1
 
@@ -1027,12 +1047,18 @@ def generate_staad_file(
     # Member incidences
     lines.append("MEMBER INCIDENCES")
     mem_id = 1
+    
+    bottom_slab_mems = []
+    outer_wall_mems = []
+    inner_wall_mems = []
+    top_slab_mems = []
 
     # Bottom slab members (connect bottom joints)
     for c in range(num_cells):
         start_node = nodes[f"BR{c}"]
         end_node = nodes[f"BL{c+1}"]
         lines.append(f"{mem_id} {start_node} {end_node}")
+        bottom_slab_mems.append(str(mem_id))
         mem_id += 1
 
     # Wall members (vertical)
@@ -1043,6 +1069,12 @@ def generate_staad_file(
         bn = nodes.get(f"BR{c}", nodes.get(f"BL{c}"))
         tn = nodes.get(f"TL{c}", nodes.get(f"TR{c}"))
         lines.append(f"{mem_id} {bn} {tn}")
+        
+        if c == 0 or c == num_cells:
+            outer_wall_mems.append(str(mem_id))
+        else:
+            inner_wall_mems.append(str(mem_id))
+            
         mem_id += 1
 
     # Top slab members
@@ -1050,6 +1082,7 @@ def generate_staad_file(
         start_node = nodes[f"TR{c}"]
         end_node = nodes[f"TL{c+1}"]
         lines.append(f"{mem_id} {start_node} {end_node}")
+        top_slab_mems.append(str(mem_id))
         mem_id += 1
     lines.append("")
 
@@ -1058,8 +1091,15 @@ def generate_staad_file(
     lines.append("MEMBER PROPERTY")
     lines.append(f"* Top slab: {top_slab_thickness*1000:.0f}mm thick")
     lines.append(f"* Bottom slab: {bottom_slab_thickness*1000:.0f}mm thick")
-    lines.append(f"* Walls: {wall_thickness*1000:.0f}mm thick")
-    lines.append(f"1 TO {mem_id-1} PRIS YD {top_slab_thickness:.3f} ZD 1.000")
+    lines.append(f"* Outer Walls: {wall_thickness*1000:.0f}mm thick")
+    if num_cells > 1:
+        lines.append(f"* Inner Walls: {mid_wall_thickness*1000:.0f}mm thick")
+        
+    lines.append(f"{' '.join(bottom_slab_mems)} PRIS YD {bottom_slab_thickness:.3f} ZD 1.000")
+    lines.append(f"{' '.join(outer_wall_mems)} PRIS YD {wall_thickness:.3f} ZD 1.000")
+    if inner_wall_mems:
+        lines.append(f"{' '.join(inner_wall_mems)} PRIS YD {mid_wall_thickness:.3f} ZD 1.000")
+    lines.append(f"{' '.join(top_slab_mems)} PRIS YD {top_slab_thickness:.3f} ZD 1.000")
     lines.append("")
 
     # Constants

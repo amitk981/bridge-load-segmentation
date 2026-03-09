@@ -561,6 +561,7 @@ def smart_staad_file():
             top_slab_thickness=float(data.get("top_slab_thickness", 0.3)),
             bottom_slab_thickness=float(data.get("bottom_slab_thickness", 0.35)),
             wall_thickness=float(data.get("wall_thickness", 0.3)),
+            mid_wall_thickness=float(data.get("mid_wall_thickness", data.get("wall_thickness", 0.3))),
             num_cells=int(data.get("num_cells", 1)),
             fck=float(data.get("fck", 30)),
             member_loads_text=data.get("member_loads_text", ""),
