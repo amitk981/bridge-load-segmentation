@@ -1272,7 +1272,7 @@
                     <div class="form-grid">
                         <div class="form-group">
                             <label>Decimal Precision</label>
-                            <input type="number" id="decimal-precision" value="2" min="0" max="6">
+                            <input type="number" id="decimal-precision" value="3" min="0" max="6">
                             <span class="field-hint">2 for meters, 0 for mm, 3 for high-precision</span>
                         </div>
                         <div class="form-group">
@@ -1362,10 +1362,37 @@
 
                 <!-- Manual Mode -->
                 <div id="member-manual" class="mode-panel" style="display:none">
-                    <div class="table-actions">
-                        <button class="btn btn-sm btn-primary" onclick="addMemberRow()">+ Add Row</button>
-                        <button class="btn btn-sm btn-ghost" onclick="importMembersCSV()">Import CSV</button>
+                    <div class="io-toolbar">
+                        <div class="io-group">
+                            <span class="io-label">Edit</span>
+                            <button class="btn btn-sm btn-primary" onclick="addMemberRow()">+ Add Row</button>
+                            <button class="btn btn-sm btn-accent" onclick="prefillBoxCulvertMembers()" title="Prefill 2-cell box culvert member layout (21.6m width)">⚡ Prefill Culvert</button>
+                        </div>
+                        <div class="io-separator"></div>
+                        <div class="io-group">
+                            <span class="io-label">CSV</span>
+                            <button class="btn btn-sm btn-ghost" onclick="importMembersCSV()">📥 Import</button>
+                            <button class="btn btn-sm btn-ghost" onclick="exportMembersCSV()">📤 Export</button>
+                        </div>
                     </div>
+                    <details class="csv-guide">
+                        <summary>CSV Format Guide — Members</summary>
+                        <div class="csv-guide-body">
+                            <h4>Sample CSV</h4>
+                            <code class="csv-sample"><span class="csv-header-line">id,start,end,group,label</span>
+1000,0,0.45,TOP_SLAB,Left Wall
+1001,0.45,0.95,TOP_SLAB,Left Haunch
+1002,0.95,5.45,TOP_SLAB,Cell 1 Span</code>
+                            <h4>Column Reference</h4>
+                            <ul class="csv-columns">
+                                <li><strong>id</strong> — STAAD member number (integer)</li>
+                                <li><strong>start</strong> — Left boundary, metres from ref axis</li>
+                                <li><strong>end</strong> — Right boundary, metres from ref axis</li>
+                                <li><strong>group</strong> — GENERAL, TOP_SLAB, BOTTOM_SLAB, LEFT_WALL, RIGHT_WALL, MIDDLE_WALL_1</li>
+                                <li><strong>label</strong> — Optional description</li>
+                            </ul>
+                        </div>
+                    </details>
                 </div>
 
                 <!-- Member Table -->
@@ -1406,7 +1433,6 @@
                     <div class="card-actions">
                         <button class="btn btn-sm btn-primary" onclick="addLoadRow()">+ Add Load</button>
                         <button class="btn btn-sm btn-ghost" onclick="duplicateLastLoad()">Duplicate</button>
-                        <button class="btn btn-sm btn-ghost" onclick="importLoadsCSV()">Import CSV</button>
                     </div>
                 </div>
                 <p class="helper-text">Define each load's transverse position and intensity. Use the <strong>IRC
@@ -1426,9 +1452,9 @@
                         title="114kN axle, 2 wheels × 0.25m, CTC 1.8m, 0.15m kerb clearance">Class A</button>
                     <span class="template-label" style="margin-left:16px;">Culvert:</span>
                     <button class="btn btn-xs btn-accent-alt" onclick="addCulvertTemplate('EARTH_PRESSURE')"
-                        title="Lateral EP: K₀γh, triangular 0 to K₀γH (LIN)">Earth Pressure</button>
+                        title="Lateral EP: K₀γh, triangular 0 to K₀γH (TRAP)">Earth Pressure</button>
                     <button class="btn btn-xs btn-accent-alt" onclick="addCulvertTemplate('WATER_PRESSURE')"
-                        title="Hydrostatic: γw × h, triangular 0 to γwH (LIN)">Water</button>
+                        title="Hydrostatic: γw × h, triangular 0 to γwH (TRAP)">Water</button>
                     <button class="btn btn-xs btn-accent-alt" onclick="addCulvertTemplate('SURCHARGE')"
                         title="Surcharge on wall: q × K₀ (uniform / UNI)">Surcharge</button>
                     <button class="btn btn-xs btn-accent-alt" onclick="addCulvertTemplate('DEAD_LOAD_FILL')"
@@ -1436,6 +1462,37 @@
                     <button class="btn btn-xs btn-accent-alt" onclick="addCulvertTemplate('WEARING_COURSE')"
                         title="Wearing course: γa × t (UNI GY)">WC DL</button>
                 </div>
+
+                <!-- Import/Export Toolbar -->
+                <div class="io-toolbar">
+                    <div class="io-group">
+                        <span class="io-label">CSV</span>
+                        <button class="btn btn-sm btn-ghost" onclick="importLoadsCSV()">📥 Import</button>
+                        <button class="btn btn-sm btn-ghost" onclick="exportLoadsCSV()">📤 Export</button>
+                    </div>
+                </div>
+
+                <details class="csv-guide">
+                    <summary>CSV Format Guide — Loads</summary>
+                    <div class="csv-guide-body">
+                        <h4>Sample CSV</h4>
+                        <code class="csv-sample"><span class="csv-header-line">id,load_case,load_type,start,end,intensity,intensity_end,direction,notes</span>
+L1,LC1,PARTIAL_UDL,0.9,2.4,-25,,GY,Patch load 1
+EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
+                        <h4>Column Reference</h4>
+                        <ul class="csv-columns">
+                            <li><strong>id</strong> — Unique load identifier (L1, EP1, AA_T1)</li>
+                            <li><strong>load_case</strong> — Case grouping (LC1, LC2 …)</li>
+                            <li><strong>load_type</strong> — PARTIAL_UDL, IRC_CLASS_AA, EARTH_PRESSURE …</li>
+                            <li><strong>start</strong> — Left edge position in metres</li>
+                            <li><strong>end</strong> — Right edge position in metres</li>
+                            <li><strong>intensity</strong> — kN/m (negative = downward for GY)</li>
+                            <li><strong>intensity_end</strong> — End intensity for trapezoidal (blank = uniform)</li>
+                            <li><strong>direction</strong> — GY (vertical), GX (horizontal), GZ (longitudinal)</li>
+                            <li><strong>notes</strong> — Optional description</li>
+                        </ul>
+                    </div>
+                </details>
 
                 <div class="table-container">
                     <table id="load-table">

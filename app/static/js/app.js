@@ -559,6 +559,30 @@ function importLoadsCSV() {
     input.click();
 }
 
+// ─── CSV Export ─────────────────────────────────────────────────────────────
+
+function exportMembersCSV() {
+    const members = collectMembers();
+    if (members.length === 0) { alert('No members to export.'); return; }
+
+    let csv = 'id,start,end,group,label\n';
+    for (const m of members) {
+        csv += `${m.id},${m.start},${m.end},${m.group || 'GENERAL'},"${m.label || ''}"\n`;
+    }
+    downloadBlob(new Blob([csv], { type: 'text/csv' }), 'members.csv');
+}
+
+function exportLoadsCSV() {
+    const loads = collectLoads();
+    if (loads.length === 0) { alert('No loads to export.'); return; }
+
+    let csv = 'id,load_case,load_type,start,end,intensity,intensity_end,direction,notes\n';
+    for (const lo of loads) {
+        csv += `${lo.id},${lo.load_case},${lo.load_type},${lo.start},${lo.end},${lo.intensity},${lo.intensity_end !== null ? lo.intensity_end : ''},${lo.direction},"${lo.notes || ''}"\n`;
+    }
+    downloadBlob(new Blob([csv], { type: 'text/csv' }), 'loads.csv');
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function downloadBlob(blob, filename) {
@@ -582,6 +606,35 @@ document.addEventListener('DOMContentLoaded', () => {
     generateAutoMembers();
     loadDefaultLoads();
 });
+
+function prefillBoxCulvertMembers() {
+    const tbody = document.getElementById('member-tbody');
+    tbody.innerHTML = '';
+
+    const members = [
+        { id: 1000, start: 0,      end: 0.45,   group: 'TOP_SLAB',  label: 'Left Wall' },
+        { id: 1001, start: 0.45,   end: 0.950,  group: 'TOP_SLAB',  label: 'Left Haunch' },
+        { id: 1002, start: 0.950,  end: 5.45,   group: 'TOP_SLAB',  label: 'Cell 1 Span' },
+        { id: 1003, start: 5.45,   end: 9.950,  group: 'TOP_SLAB',  label: 'Cell 2 Span' },
+        { id: 1004, start: 9.950,  end: 10.450, group: 'TOP_SLAB',  label: 'Mid Wall' },
+        { id: 1005, start: 10.450, end: 10.8,   group: 'TOP_SLAB',  label: 'Mid Haunch R' },
+        { id: 1006, start: 10.8,   end: 11.150, group: 'TOP_SLAB',  label: 'Mid Haunch L' },
+        { id: 1007, start: 11.150, end: 11.650, group: 'TOP_SLAB',  label: 'Right Haunch' },
+        { id: 1008, start: 11.650, end: 16.150, group: 'TOP_SLAB',  label: 'Cell 3 Span' },
+        { id: 1009, start: 16.150, end: 20.650, group: 'TOP_SLAB',  label: 'Cell 4 Span' },
+        { id: 1010, start: 20.650, end: 21.150, group: 'TOP_SLAB',  label: 'Right Haunch' },
+        { id: 1011, start: 21.150, end: 21.60,  group: 'TOP_SLAB',  label: 'Right Wall' },
+    ];
+
+    for (const m of members) {
+        const width = (m.end - m.start).toFixed(4);
+        addMemberRowWithData(m.id, m.start, m.end, width, m.group, m.label);
+    }
+
+    // Update total width to match
+    document.getElementById('total-width').value = 21.6;
+    updateVisualization();
+}
 
 function loadDefaultLoads() {
     // Preload example loads: bridge deck scenario
