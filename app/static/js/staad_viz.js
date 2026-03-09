@@ -14,6 +14,7 @@ const StaadViz = (() => {
         grid: '#161b22',
         gridLine: '#21262d',
         member: '#4ade80',    // green members
+        intermWall: '#fb923c', // orange intermediate walls
         joint: '#00d4ff',    // cyan joints
         jointFill: '#0d1117',
         support: '#facc15',    // yellow supports
@@ -192,6 +193,7 @@ const StaadViz = (() => {
             else if (c === nc) wx = nc * cs + tw + (nc - 1) * mw;
             
             const wallThick = (c === 0 || c === nc) ? tw : mw;
+            ctx.fillStyle = (c > 0 && c < nc) ? C.intermWall : C.member;
             ctx.fillRect(tx(wx), ty(bs + ch), wallThick * scale, ch * scale);
         }
 
@@ -212,6 +214,7 @@ const StaadViz = (() => {
             else if (c === nc) wx = nc * cs + tw + (nc - 1) * mw;
             
             const wallThick = (c === 0 || c === nc) ? tw : mw;
+            ctx.strokeStyle = (c > 0 && c < nc) ? C.intermWall : C.member;
             ctx.strokeRect(tx(wx), ty(bs + ch), wallThick * scale, ch * scale);
         }
 
@@ -243,6 +246,7 @@ const StaadViz = (() => {
         for (let c = 1; c < nc; c++) {
             const wx = c * cs + tw + (c - 1) * mw + mw / 2;
             ctx.save();
+            ctx.fillStyle = C.intermWall;
             ctx.translate(tx(wx), ty(bs + ch / 2));
             ctx.rotate(-Math.PI / 2);
             ctx.fillText(`Intermediate Wall ${c} (${mw * 1000}mm)`, 0, 0);
@@ -583,17 +587,18 @@ const StaadViz = (() => {
         ctx.textAlign = 'left';
 
         const legendItems = [
-            { color: C.member, label: 'Concrete Members' },
+            { color: C.member, label: 'Outer Box' },
+            { color: C.intermWall, label: 'Inner Walls' },
             { color: C.joint, label: 'Joints / Nodes' },
             { color: C.support, label: 'Fixed Supports' },
-            { color: C.loadDL, label: 'Gravity Loads (DL+LL)' },
+            { color: C.loadDL, label: 'Gravity Loads' },
             { color: C.loadEP, label: 'Earth Pressure' },
             { color: C.loadWP, label: 'Water Pressure' },
         ];
 
         legendItems.forEach((item, i) => {
-            const lx = legendX + (i % 3) * 160;
-            const ly = legendY + Math.floor(i / 3) * 18;
+            const lx = legendX + (i % 4) * 140;
+            const ly = legendY + Math.floor(i / 4) * 18;
             ctx.fillStyle = item.color;
             ctx.fillRect(lx, ly, 12, 10);
             ctx.fillStyle = C.text;

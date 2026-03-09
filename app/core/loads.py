@@ -217,6 +217,202 @@ def irc_70r_tracked(
             notes=f"IRC 70R Tracked - Right Track (350kN / {track_length}m)",
             contact_width=track_width,
         ),
+    ]  
+
+
+def irc_70r_wheeled(
+    position_offset: float = 0.0,
+    load_case: str = "LC_70R_W",
+    kerb_clearance: float = 1.2,
+) -> list[LoadPatch]:
+    """
+    IRC 70R Wheeled Vehicle — transverse wheel-line representation.
+
+    Template basis (IRC 6:2017 Figure references used in practice):
+    - Critical single axle load: 20t = 200 kN
+    - Two wheel lines across carriageway
+    - Typical wheel-line CTC: 2.44m (1.22m either side)
+    - Critical tyre patch used for strip-load conversion: 0.41m x 0.61m
+
+    Longitudinal train metadata is embedded in notes for traceability:
+        axle loads = [80,120,120,170,170,170,170] kN
+        spacings    = [3.96,1.52,2.15,1.37,5.05,1.57] m
+    """
+    wheel_width = 0.61       # m (effective transverse tyre width)
+    wheel_ctc = 2.44         # m
+    tyre_length = 0.41       # m (for kN/m conversion along span)
+    axle_load = 200.0        # kN (critical single axle)
+    wheel_line_load = axle_load / 2.0
+    intensity = -(wheel_line_load / tyre_length)  # kN/m
+
+    left_start = position_offset + kerb_clearance
+    left_end = left_start + wheel_width
+    right_start = left_start + wheel_ctc
+    right_end = right_start + wheel_width
+
+    meta = (
+        "vehicle=CLASS_70R_WHEELED; axle_train_kN=[80,120,120,170,170,170,170]; "
+        "long_spacing_m=[3.96,1.52,2.15,1.37,5.05,1.57]; "
+        "critical_axle_kN=200; wheel_ctc_m=2.44; tyre_m=0.41x0.61"
+    )
+
+    return [
+        LoadPatch(
+            id="70RW_W1",
+            load_case=load_case,
+            load_type=LoadType.IRC_70R,
+            start=left_start,
+            end=left_end,
+            intensity=intensity,
+            direction=LoadDirection.GY,
+            notes=f"IRC 70R Wheeled - Left Wheel Line [{meta}]",
+            contact_width=wheel_width,
+        ),
+        LoadPatch(
+            id="70RW_W2",
+            load_case=load_case,
+            load_type=LoadType.IRC_70R,
+            start=right_start,
+            end=right_end,
+            intensity=intensity,
+            direction=LoadDirection.GY,
+            notes=f"IRC 70R Wheeled - Right Wheel Line [{meta}]",
+            contact_width=wheel_width,
+        ),
+    ]
+
+
+def irc_single_axle_bogie(
+    position_offset: float = 0.0,
+    load_case: str = "LC_SAB",
+    kerb_clearance: float = 1.2,
+) -> list[LoadPatch]:
+    """
+    Max Single Axle Bogie template (20t = 200 kN).
+
+    Two wheel lines across width:
+    - Wheel-line CTC = 2.44m
+    - Effective wheel strip width = 0.61m
+    - Tyre patch length used for kN/m conversion = 0.41m
+    """
+    wheel_width = 0.61
+    wheel_ctc = 2.44
+    tyre_length = 0.41
+    axle_load = 200.0
+    wheel_line_load = axle_load / 2.0
+    intensity = -(wheel_line_load / tyre_length)
+
+    left_start = position_offset + kerb_clearance
+    left_end = left_start + wheel_width
+    right_start = left_start + wheel_ctc
+    right_end = right_start + wheel_width
+
+    meta = (
+        "vehicle=SINGLE_AXLE_BOGIE; axle_kN=200; wheel_ctc_m=2.44; "
+        "tyre_m=0.41x0.61; longitudinal_spacing_m=[]"
+    )
+
+    return [
+        LoadPatch(
+            id="SAB_W1",
+            load_case=load_case,
+            load_type=LoadType.SINGLE_AXLE_BOGIE,
+            start=left_start,
+            end=left_end,
+            intensity=intensity,
+            direction=LoadDirection.GY,
+            notes=f"Max Single Axle Bogie - Left Wheel Line [{meta}]",
+            contact_width=wheel_width,
+        ),
+        LoadPatch(
+            id="SAB_W2",
+            load_case=load_case,
+            load_type=LoadType.SINGLE_AXLE_BOGIE,
+            start=right_start,
+            end=right_end,
+            intensity=intensity,
+            direction=LoadDirection.GY,
+            notes=f"Max Single Axle Bogie - Right Wheel Line [{meta}]",
+            contact_width=wheel_width,
+        ),
+    ]
+
+
+def irc_double_axle_bogie(
+    position_offset: float = 0.0,
+    load_case: str = "LC_DAB",
+    kerb_clearance: float = 1.2,
+) -> list[LoadPatch]:
+    """
+    Max Double Axle Bogie template (20t + 20t, spacing 1.22m longitudinally).
+
+    Returns four wheel-line patches:
+    - Axle 1: left/right wheel lines
+    - Axle 2: left/right wheel lines
+    """
+    wheel_width = 0.61
+    wheel_ctc = 2.44
+    tyre_length = 0.41
+    axle_load = 200.0
+    axle_spacing = 1.22  # longitudinal metadata only (not transverse coordinate)
+    wheel_line_load = axle_load / 2.0
+    intensity = -(wheel_line_load / tyre_length)
+
+    left_start = position_offset + kerb_clearance
+    left_end = left_start + wheel_width
+    right_start = left_start + wheel_ctc
+    right_end = right_start + wheel_width
+
+    base_meta = (
+        "vehicle=DOUBLE_AXLE_BOGIE; axle_kN=[200,200]; axle_spacing_m=[1.22]; "
+        "wheel_ctc_m=2.44; tyre_m=0.41x0.61"
+    )
+
+    return [
+        LoadPatch(
+            id="DAB_A1_W1",
+            load_case=load_case,
+            load_type=LoadType.DOUBLE_AXLE_BOGIE,
+            start=left_start,
+            end=left_end,
+            intensity=intensity,
+            direction=LoadDirection.GY,
+            notes=f"Max Double Axle Bogie - Axle 1 Left Wheel Line [{base_meta}]",
+            contact_width=wheel_width,
+        ),
+        LoadPatch(
+            id="DAB_A1_W2",
+            load_case=load_case,
+            load_type=LoadType.DOUBLE_AXLE_BOGIE,
+            start=right_start,
+            end=right_end,
+            intensity=intensity,
+            direction=LoadDirection.GY,
+            notes=f"Max Double Axle Bogie - Axle 1 Right Wheel Line [{base_meta}]",
+            contact_width=wheel_width,
+        ),
+        LoadPatch(
+            id="DAB_A2_W1",
+            load_case=load_case,
+            load_type=LoadType.DOUBLE_AXLE_BOGIE,
+            start=left_start,
+            end=left_end,
+            intensity=intensity,
+            direction=LoadDirection.GY,
+            notes=f"Max Double Axle Bogie - Axle 2 Left Wheel Line [{base_meta}]",
+            contact_width=wheel_width,
+        ),
+        LoadPatch(
+            id="DAB_A2_W2",
+            load_case=load_case,
+            load_type=LoadType.DOUBLE_AXLE_BOGIE,
+            start=right_start,
+            end=right_end,
+            intensity=intensity,
+            direction=LoadDirection.GY,
+            notes=f"Max Double Axle Bogie - Axle 2 Right Wheel Line [{base_meta}]",
+            contact_width=wheel_width,
+        ),
     ]
 
 

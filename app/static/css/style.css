@@ -555,6 +555,109 @@ tbody td select {
     display: flex;
     gap: 12px;
     margin-bottom: 20px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.inline-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.inline-toggle input {
+    accent-color: var(--accent);
+}
+
+.results-cluster {
+    margin-bottom: 20px;
+}
+
+.results-cluster:last-child {
+    margin-bottom: 0;
+}
+
+.results-cluster-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--accent);
+    margin: 2px 0 10px;
+    font-weight: 700;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.flow-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.flow-item {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.18);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.flow-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+}
+
+.flow-status {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.flow-status.ok {
+    color: var(--success);
+}
+
+.flow-status.bad {
+    color: var(--error);
+}
+
+.flow-metric {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.flow-blockers {
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    background: rgba(239, 68, 68, 0.08);
+    color: #fca5a5;
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.flow-ok {
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    background: rgba(16, 185, 129, 0.08);
+    color: #86efac;
+    font-size: 12px;
+    font-weight: 600;
 }
 
 /* ─── STAAD Preview ─── */
@@ -580,9 +683,13 @@ tbody td select {
     margin-bottom: 16px;
 }
 
+.app-messages {
+    margin-bottom: 20px;
+}
+
 .validation-msg {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
     padding: 8px 14px;
     border-radius: var(--radius-sm);
@@ -600,6 +707,30 @@ tbody td select {
     background: rgba(245, 158, 11, 0.1);
     border: 1px solid rgba(245, 158, 11, 0.2);
     color: var(--warning);
+}
+
+.validation-msg.info {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+}
+
+.validation-msg.success {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    color: var(--success);
+}
+
+.validation-detail {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.input-error {
+    border-color: var(--error) !important;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15) !important;
 }
 
 /* ─── Export Features ─── */

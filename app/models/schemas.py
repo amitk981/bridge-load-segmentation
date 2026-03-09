@@ -41,6 +41,8 @@ class LoadType(str, Enum):
     IRC_CLASS_AA = "IRC_CLASS_AA"
     IRC_70R = "IRC_70R"
     IRC_CLASS_A = "IRC_CLASS_A"
+    SINGLE_AXLE_BOGIE = "SINGLE_AXLE_BOGIE"
+    DOUBLE_AXLE_BOGIE = "DOUBLE_AXLE_BOGIE"
     EARTH_PRESSURE = "EARTH_PRESSURE"
     SURCHARGE = "SURCHARGE"
     HYDROSTATIC = "HYDROSTATIC"
@@ -106,7 +108,8 @@ class ProjectSettings(BaseModel):
     # Box culvert specific
     culvert_height: float = Field(default=0.0, ge=0, description="Height of culvert walls")
     fill_depth: float = Field(default=0.0, ge=0, description="Earth fill depth above top slab")
-    slab_thickness: float = Field(default=0.3, ge=0, description="Slab thickness in chosen units")
+    slab_thickness: float = Field(default=0.3, ge=0, description="Top slab thickness in chosen units")
+    bottom_slab_thickness: float = Field(default=0.35, ge=0, description="Bottom slab thickness in chosen units")
     wall_thickness: float = Field(default=0.3, ge=0, description="Wall thickness in chosen units")
 
     # Settings

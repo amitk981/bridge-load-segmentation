@@ -20,6 +20,7 @@ from __future__ import annotations
 import math
 from typing import Optional
 from dataclasses import dataclass, field
+import numpy as np
 
 
 # ─── 1. Impact Factor Calculator (IRC 6, Cl. 208) ───────────────────────────
@@ -399,6 +400,477 @@ def vehicle_position_sweep(
     }
 
 
+# ─── 3A. Longitudinal Moving-Load Critical Position Sweep ───────────────────
+
+@dataclass
+class CriticalValue:
+    value: float
+    lead_position: float
+    member_id: int
+
+
+@dataclass
+class MemberGroupCritical:
+    group: str
+    max_sagging_moment: CriticalValue
+    max_hogging_moment: CriticalValue
+    max_shear_force: CriticalValue
+
+
+def compute_longitudinal_critical_positions(
+    clear_span: float = 4.0,
+    clear_height: float = 3.0,
+    top_slab_thickness: float = 0.30,
+    bottom_slab_thickness: float = 0.35,
+    wall_thickness: float = 0.30,
+    mid_wall_thickness: float = 0.30,
+    num_cells: int = 1,
+    increment: float = 0.1,
+    fck: float = 30.0,
+    vehicles: Optional[list[str]] = None,
+) -> dict:
+    """
+    Sweep longitudinal vehicle position and find critical response positions.
+
+    Model:
+    - 2D frame (top slab, bottom slab, side walls, intermediate walls)
+    - Bottom nodes restrained in Ux and Uy, rotation free (FIXED BUT MZ analogue)
+    - Moving axle loads applied on top slab elements
+
+    Notes on load trains:
+    - 70R wheeled / Class A / bogie loads are represented as concentrated axle
+      loads derived from IRC 6:2017 tabulations used in practice.
+    - 70R tracked is represented as two equivalent concentrated loads.
+    """
+    if clear_span <= 0:
+        raise ValueError("clear_span must be > 0")
+    if clear_height <= 0:
+        raise ValueError("clear_height must be > 0")
+    if increment <= 0:
+        raise ValueError("increment must be > 0")
+    if num_cells < 1:
+        raise ValueError("num_cells must be >= 1")
+
+    vehicle_library = _irc_vehicle_library()
+    selected_vehicle_codes = vehicles or list(vehicle_library.keys())
+    selected = [code for code in selected_vehicle_codes if code in vehicle_library]
+    if not selected:
+        raise ValueError("No valid vehicle codes selected")
+
+    model = _build_longitudinal_frame_model(
+        clear_span=clear_span,
+        clear_height=clear_height,
+        top_slab_thickness=top_slab_thickness,
+        bottom_slab_thickness=bottom_slab_thickness,
+        wall_thickness=wall_thickness,
+        mid_wall_thickness=mid_wall_thickness,
+        num_cells=num_cells,
+        fck=fck,
+    )
+
+    results = []
+    total_length = model["total_length"]
+    groups = ["TOP_SLAB", "BOTTOM_SLAB", "SIDE_WALL", "INTERMEDIATE_WALL"]
+
+    for v_code in selected:
+        vehicle = vehicle_library[v_code]
+        axle_loads = vehicle["axle_loads_kN"]
+        axle_offsets = _axle_offsets(vehicle["axle_spacings_m"])
+        train_length = axle_offsets[-1] if axle_offsets else 0.0
+
+        envelopes = _init_group_envelopes(groups)
+
+        lead = -train_length
+        positions_count = 0
+        while lead <= total_length + 1e-9:
+            positions_count += 1
+
+            response = _solve_frame_for_vehicle_position(
+                model=model,
+                lead_position=lead,
+                axle_offsets=axle_offsets,
+                axle_loads=axle_loads,
+            )
+            _update_group_envelopes(envelopes, response["group_forces"], lead)
+
+            lead += increment
+
+        group_results = []
+        for group in groups:
+            env = envelopes[group]
+            group_results.append({
+                "group": group,
+                "max_sagging_moment": env["sagging"],
+                "max_hogging_moment": env["hogging"],
+                "max_shear_force": env["shear"],
+            })
+
+        results.append({
+            "vehicle_code": v_code,
+            "vehicle_name": vehicle["name"],
+            "notes": vehicle["notes"],
+            "axle_loads_kN": axle_loads,
+            "axle_offsets_m": axle_offsets,
+            "train_length": round(train_length, 3),
+            "num_positions": positions_count,
+            "group_results": group_results,
+        })
+
+    return {
+        "model": {
+            "clear_span": clear_span,
+            "clear_height": clear_height,
+            "top_slab_thickness": top_slab_thickness,
+            "bottom_slab_thickness": bottom_slab_thickness,
+            "wall_thickness": wall_thickness,
+            "mid_wall_thickness": mid_wall_thickness,
+            "num_cells": num_cells,
+            "sweep_increment": increment,
+            "total_length": round(total_length, 3),
+        },
+        "vehicles": results,
+    }
+
+
+def _irc_vehicle_library() -> dict:
+    """
+    IRC 6:2017 vehicle presets used for longitudinal critical-position sweep.
+    """
+    return {
+        "CLASS_70R_WHEELED": {
+            "name": "Class 70R Wheeled",
+            # Axle loads (kN) based on wheel train in IRC figure (8t,12t,12t,17t,17t,17t,17t)
+            "axle_loads_kN": [80.0, 120.0, 120.0, 170.0, 170.0, 170.0, 170.0],
+            # Spacing between consecutive axles (m)
+            "axle_spacings_m": [3.96, 1.52, 2.15, 1.37, 5.05, 1.57],
+            "notes": "IRC 70R wheeled train modeled as concentrated axle loads.",
+        },
+        "CLASS_70R_TRACKED": {
+            "name": "Class 70R Tracked",
+            # Equivalent two concentrated loads (35t + 35t)
+            "axle_loads_kN": [350.0, 350.0],
+            # Center-to-center spacing based on 4.57m track lengths with 0.90m gap
+            "axle_spacings_m": [5.47],
+            "notes": "Tracked loading represented by two equivalent concentrated loads.",
+        },
+        "CLASS_A": {
+            "name": "Class A Train",
+            # kN values from Class A axle train (2.7t/6.8t/11.4t groups)
+            "axle_loads_kN": [27.0, 27.0, 114.0, 114.0, 68.0, 68.0, 68.0, 68.0, 27.0, 27.0],
+            # m spacing between consecutive axles (critical train pattern)
+            "axle_spacings_m": [1.10, 3.20, 1.20, 4.30, 3.00, 3.00, 3.00, 1.40, 0.90],
+            "notes": "Class A train represented using the standard concentrated axle train pattern.",
+        },
+        "SINGLE_AXLE_BOGIE": {
+            "name": "Single Axle Bogie",
+            "axle_loads_kN": [200.0],
+            "axle_spacings_m": [],
+            "notes": "Single heavy axle (20t equivalent).",
+        },
+        "DOUBLE_AXLE_BOGIE": {
+            "name": "Double Axle Bogie Load",
+            "axle_loads_kN": [200.0, 200.0],
+            "axle_spacings_m": [1.22],
+            "notes": "Double bogie load represented as two 20t equivalent axles.",
+        },
+    }
+
+
+def _axle_offsets(spacings: list[float]) -> list[float]:
+    offsets = [0.0]
+    x = 0.0
+    for s in spacings:
+        x += s
+        offsets.append(round(x, 6))
+    return offsets
+
+
+def _frame_element_matrices(
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    area: float,
+    inertia: float,
+    elastic_modulus: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    dx = x2 - x1
+    dy = y2 - y1
+    L = math.hypot(dx, dy)
+    if L <= 0:
+        raise ValueError("Element length must be > 0")
+
+    c = dx / L
+    s = dy / L
+
+    EA_L = elastic_modulus * area / L
+    EI = elastic_modulus * inertia
+    EI_L = EI / L
+    EI_L2 = EI / (L * L)
+    EI_L3 = EI / (L * L * L)
+
+    k_local = np.array([
+        [EA_L, 0.0, 0.0, -EA_L, 0.0, 0.0],
+        [0.0, 12.0 * EI_L3, 6.0 * EI_L2, 0.0, -12.0 * EI_L3, 6.0 * EI_L2],
+        [0.0, 6.0 * EI_L2, 4.0 * EI_L, 0.0, -6.0 * EI_L2, 2.0 * EI_L],
+        [-EA_L, 0.0, 0.0, EA_L, 0.0, 0.0],
+        [0.0, -12.0 * EI_L3, -6.0 * EI_L2, 0.0, 12.0 * EI_L3, -6.0 * EI_L2],
+        [0.0, 6.0 * EI_L2, 2.0 * EI_L, 0.0, -6.0 * EI_L2, 4.0 * EI_L],
+    ], dtype=float)
+
+    T = np.array([
+        [c, s, 0.0, 0.0, 0.0, 0.0],
+        [-s, c, 0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, c, s, 0.0],
+        [0.0, 0.0, 0.0, -s, c, 0.0],
+        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+    ], dtype=float)
+
+    return k_local, T
+
+
+def _build_longitudinal_frame_model(
+    clear_span: float,
+    clear_height: float,
+    top_slab_thickness: float,
+    bottom_slab_thickness: float,
+    wall_thickness: float,
+    mid_wall_thickness: float,
+    num_cells: int,
+    fck: float,
+) -> dict:
+    # Material modulus consistent with existing STAAD export logic
+    E = 5000.0 * math.sqrt(max(fck, 1.0)) * 1000.0  # kN/m²
+
+    total_length = num_cells * clear_span
+
+    nodes = []
+    bottom_nodes = []
+    top_nodes = []
+    for i in range(num_cells + 1):
+        x = i * clear_span
+        b_idx = len(nodes)
+        nodes.append((x, 0.0))
+        t_idx = len(nodes)
+        nodes.append((x, clear_height))
+        bottom_nodes.append(b_idx)
+        top_nodes.append(t_idx)
+
+    elements = []
+    top_element_idx_by_span = {}
+
+    def add_element(n1: int, n2: int, group: str, thickness: float):
+        x1, y1 = nodes[n1]
+        x2, y2 = nodes[n2]
+        area = max(thickness, 1e-6) * 1.0
+        inertia = 1.0 * max(thickness, 1e-6) ** 3 / 12.0
+        k_local, T = _frame_element_matrices(x1, y1, x2, y2, area, inertia, E)
+        elements.append({
+            "id": len(elements) + 1,
+            "n1": n1,
+            "n2": n2,
+            "group": group,
+            "k_local": k_local,
+            "T": T,
+            "x1": x1,
+            "x2": x2,
+        })
+
+    # Horizontal members
+    for i in range(num_cells):
+        add_element(top_nodes[i], top_nodes[i + 1], "TOP_SLAB", top_slab_thickness)
+        top_element_idx_by_span[i] = len(elements) - 1
+    for i in range(num_cells):
+        add_element(bottom_nodes[i], bottom_nodes[i + 1], "BOTTOM_SLAB", bottom_slab_thickness)
+
+    # Vertical members
+    for i in range(num_cells + 1):
+        if i == 0 or i == num_cells:
+            group = "SIDE_WALL"
+            t = wall_thickness
+        else:
+            group = "INTERMEDIATE_WALL"
+            t = mid_wall_thickness
+        add_element(bottom_nodes[i], top_nodes[i], group, t)
+
+    n_dof = 3 * len(nodes)
+    K = np.zeros((n_dof, n_dof), dtype=float)
+    for e in elements:
+        k_global = e["T"].T @ e["k_local"] @ e["T"]
+        dof = [
+            3 * e["n1"], 3 * e["n1"] + 1, 3 * e["n1"] + 2,
+            3 * e["n2"], 3 * e["n2"] + 1, 3 * e["n2"] + 2,
+        ]
+        K[np.ix_(dof, dof)] += k_global
+
+    constrained = set()
+    for n in bottom_nodes:
+        constrained.add(3 * n)      # Ux
+        constrained.add(3 * n + 1)  # Uy
+    free = [i for i in range(n_dof) if i not in constrained]
+
+    K_ff = K[np.ix_(free, free)]
+    try:
+        K_ff_inv = np.linalg.inv(K_ff)
+    except np.linalg.LinAlgError as exc:
+        raise ValueError("Frame stiffness matrix is singular for the selected geometry") from exc
+
+    return {
+        "nodes": nodes,
+        "elements": elements,
+        "top_element_idx_by_span": top_element_idx_by_span,
+        "num_cells": num_cells,
+        "clear_span": clear_span,
+        "total_length": total_length,
+        "n_dof": n_dof,
+        "free_dof": free,
+        "K_ff_inv": K_ff_inv,
+    }
+
+
+def _init_group_envelopes(groups: list[str]) -> dict:
+    envelopes = {}
+    for g in groups:
+        envelopes[g] = {
+            "sagging": {"value": 0.0, "lead_position": 0.0, "member_id": 0},
+            "hogging": {"value": 0.0, "lead_position": 0.0, "member_id": 0},
+            "shear": {"value": 0.0, "lead_position": 0.0, "member_id": 0},
+        }
+    return envelopes
+
+
+def _update_group_envelopes(envelopes: dict, group_forces: dict, lead_position: float):
+    for group, gdata in group_forces.items():
+        moments = gdata["moments"]  # list[(moment, member_id)]
+        shears = gdata["shears"]    # list[(abs_shear, member_id)]
+        if not moments and not shears:
+            continue
+
+        positive = [(m, mid) for m, mid in moments if m > 0]
+        negative = [(m, mid) for m, mid in moments if m < 0]
+
+        if positive:
+            sag_val, sag_mid = max(positive, key=lambda x: x[0])
+            if sag_val > envelopes[group]["sagging"]["value"]:
+                envelopes[group]["sagging"] = {
+                    "value": round(sag_val, 3),
+                    "lead_position": round(lead_position, 3),
+                    "member_id": sag_mid,
+                }
+
+        if negative:
+            neg_val, neg_mid = min(negative, key=lambda x: x[0])  # most negative
+            hog_val = abs(neg_val)
+            if hog_val > envelopes[group]["hogging"]["value"]:
+                envelopes[group]["hogging"] = {
+                    "value": round(hog_val, 3),
+                    "lead_position": round(lead_position, 3),
+                    "member_id": neg_mid,
+                }
+
+        if shears:
+            sh_val, sh_mid = max(shears, key=lambda x: x[0])
+            if sh_val > envelopes[group]["shear"]["value"]:
+                envelopes[group]["shear"] = {
+                    "value": round(sh_val, 3),
+                    "lead_position": round(lead_position, 3),
+                    "member_id": sh_mid,
+                }
+
+
+def _solve_frame_for_vehicle_position(
+    model: dict,
+    lead_position: float,
+    axle_offsets: list[float],
+    axle_loads: list[float],
+) -> dict:
+    n_dof = model["n_dof"]
+    F_global = np.zeros(n_dof, dtype=float)
+
+    # Per-element equivalent nodal loads in local coordinates
+    element_eq_local = [np.zeros(6, dtype=float) for _ in model["elements"]]
+
+    clear_span = model["clear_span"]
+    total_length = model["total_length"]
+    num_cells = model["num_cells"]
+
+    for offset, load_kN in zip(axle_offsets, axle_loads):
+        x = lead_position + offset
+        if x < 0.0 or x > total_length:
+            continue
+
+        span_idx = int(x / clear_span) if clear_span > 0 else 0
+        if span_idx >= num_cells:
+            span_idx = num_cells - 1
+        if span_idx < 0:
+            continue
+
+        elem_idx = model["top_element_idx_by_span"][span_idx]
+        elem = model["elements"][elem_idx]
+
+        x0 = span_idx * clear_span
+        a = x - x0
+        L = clear_span
+        if L <= 0:
+            continue
+        xi = max(0.0, min(1.0, a / L))
+
+        # Hermitian shape functions for beam transverse load at x=xi*L
+        N1 = 1.0 - 3.0 * xi * xi + 2.0 * xi * xi * xi
+        N2 = L * (xi - 2.0 * xi * xi + xi * xi * xi)
+        N3 = 3.0 * xi * xi - 2.0 * xi * xi * xi
+        N4 = L * (-xi * xi + xi * xi * xi)
+
+        # Downward load in local y => negative
+        P = -abs(load_kN)
+        f_local = np.array([0.0, P * N1, P * N2, 0.0, P * N3, P * N4], dtype=float)
+
+        element_eq_local[elem_idx] += f_local
+
+        f_global = elem["T"].T @ f_local
+        dof = [
+            3 * elem["n1"], 3 * elem["n1"] + 1, 3 * elem["n1"] + 2,
+            3 * elem["n2"], 3 * elem["n2"] + 1, 3 * elem["n2"] + 2,
+        ]
+        F_global[dof] += f_global
+
+    u = np.zeros(n_dof, dtype=float)
+    free = model["free_dof"]
+    if free:
+        u_free = model["K_ff_inv"] @ F_global[free]
+        u[free] = u_free
+
+    group_forces = {
+        "TOP_SLAB": {"moments": [], "shears": []},
+        "BOTTOM_SLAB": {"moments": [], "shears": []},
+        "SIDE_WALL": {"moments": [], "shears": []},
+        "INTERMEDIATE_WALL": {"moments": [], "shears": []},
+    }
+
+    for i, elem in enumerate(model["elements"]):
+        dof = [
+            3 * elem["n1"], 3 * elem["n1"] + 1, 3 * elem["n1"] + 2,
+            3 * elem["n2"], 3 * elem["n2"] + 1, 3 * elem["n2"] + 2,
+        ]
+        u_local = elem["T"] @ u[dof]
+        # End forces: K*u - fixed-end equivalent load
+        end_forces_local = elem["k_local"] @ u_local - element_eq_local[i]
+
+        V1 = float(end_forces_local[1])
+        M1 = float(end_forces_local[2])
+        V2 = float(end_forces_local[4])
+        M2 = float(end_forces_local[5])
+
+        g = elem["group"]
+        group_forces[g]["moments"].append((M1, elem["id"]))
+        group_forces[g]["moments"].append((M2, elem["id"]))
+        group_forces[g]["shears"].append((abs(V1), elem["id"]))
+        group_forces[g]["shears"].append((abs(V2), elem["id"]))
+
+    return {"group_forces": group_forces}
+
+
 # ─── 4. Effective Width / Load Dispersion (IRC 112) ─────────────────────────
 
 @dataclass
@@ -645,7 +1117,10 @@ def check_bearing_pressure(
         )
 
     utilization = q_max / allowable_bearing if allowable_bearing > 0 else 999
-    status = "PASS" if utilization <= 1.0 else "FAIL"
+    has_base_tension = q_min < 0
+    status = "PASS" if (utilization <= 1.0 and not has_base_tension) else "FAIL"
+    if has_base_tension:
+        formula += "\nCheck: q_min < 0 indicates base tension/uplift at one edge; increase base width or reduce eccentricity."
 
     return BearingCheckResult(
         total_vertical_load=round(total_vertical_load, 2),
@@ -1915,6 +2390,7 @@ def check_deflection(
     fy: float = 500.0,
     support_condition: str = "CONTINUOUS",
     comp_steel: float = 0,
+    ast_required: float = 0,
 ) -> DeflectionResult:
     """
     Deflection check using L/d ratio method per IS 456, Cl. 23.2.
@@ -1940,8 +2416,21 @@ def check_deflection(
 
     pt = 100 * ast_provided / (breadth * d) if d > 0 else 0.12
 
-    # Steel stress at service (simplified)
-    fs = 0.58 * fy * (ast_provided / max(ast_provided, 1))  # simplified - assume Ast_req ≈ Ast_prov
+    # Steel stress at service (approximate):
+    # If Ast_required is provided, fs scales with Ast_required/Ast_provided.
+    # Otherwise, use a moderate reference steel ratio (pt_ref = 0.5%) so fs
+    # decreases with increasing provided steel instead of staying constant.
+    if ast_required > 0:
+        stress_ratio = ast_required / max(ast_provided, 1e-6)
+        fs_basis = f"Ast_req/Ast_prov = {ast_required:.1f}/{ast_provided:.1f}"
+    else:
+        pt_ref = 0.5  # %
+        ast_ref = (pt_ref / 100.0) * breadth * d if d > 0 else ast_provided
+        stress_ratio = ast_ref / max(ast_provided, 1e-6)
+        fs_basis = f"reference pt={pt_ref:.2f}%"
+
+    stress_ratio = min(1.0, max(0.35, stress_ratio))
+    fs = 0.58 * fy * stress_ratio
 
     # Modification factor for tension reinforcement (IS 456 Fig 4 - curve fit)
     # Approximate curve: MF = 1/(0.225 + 0.00322×fs + 0.625×log10(pt_req))
@@ -1978,7 +2467,7 @@ def check_deflection(
         f"d = {d:.0f}mm, L = {L:.0f}mm\n"
         f"Actual L/d = {actual_ld:.1f}\n"
         f"Basic L/d = {basic} ({support_condition})\n"
-        f"pt = {pt:.3f}%, fs = {fs:.0f} MPa\n"
+        f"pt = {pt:.3f}%, fs = {fs:.0f} MPa ({fs_basis})\n"
         f"MF (tension) = {mf_tension:.2f} (IS 456 Fig 4)\n"
         f"MF (compression) = {mf_comp:.2f} (IS 456 Fig 5)\n"
         f"Allowable L/d = {basic} × {mf_tension:.2f} × {mf_comp:.2f} = {allowable_ld:.1f}"

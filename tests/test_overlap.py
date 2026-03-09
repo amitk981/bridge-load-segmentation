@@ -14,7 +14,13 @@ from app.core.geometry import generate_equal_segments, generate_box_culvert_memb
 from app.core.overlap import compute_overlaps, compute_summary
 from app.core.loads import (
     apply_dispersion, irc_class_aa_tracked, irc_70r_tracked,
+    irc_70r_wheeled, irc_single_axle_bogie, irc_double_axle_bogie,
     earth_pressure_load, water_pressure_load,
+)
+from app.core.smart_features import (
+    compute_longitudinal_critical_positions,
+    check_bearing_pressure,
+    check_deflection,
 )
 from app.core.staad_export import generate_staad_text
 from app.core.validation import validate_members, validate_loads
@@ -210,6 +216,26 @@ class TestTemplates:
         loads = irc_70r_tracked()
         assert len(loads) == 2
         assert abs(loads[0].span - 0.84) < 1e-9
+        assert "Tracked" in loads[0].notes
+
+    def test_irc_70r_wheeled_template(self):
+        loads = irc_70r_wheeled()
+        assert len(loads) == 2
+        assert loads[0].load_type == LoadType.IRC_70R
+        assert "Wheeled" in loads[0].notes
+        assert "vehicle=CLASS_70R_WHEELED" in loads[0].notes
+
+    def test_single_axle_bogie_template(self):
+        loads = irc_single_axle_bogie()
+        assert len(loads) == 2
+        assert loads[0].load_type == LoadType.SINGLE_AXLE_BOGIE
+        assert "Single Axle Bogie" in loads[0].notes
+
+    def test_double_axle_bogie_template(self):
+        loads = irc_double_axle_bogie()
+        assert len(loads) == 4
+        assert loads[0].load_type == LoadType.DOUBLE_AXLE_BOGIE
+        assert "Double Axle Bogie" in loads[0].notes
 
     def test_earth_pressure_trapezoidal(self):
         load = earth_pressure_load(height=3.0)
@@ -287,3 +313,66 @@ class TestSummary:
         assert summary.affected_members == 3  # Members 0-2, 2-4, 4-6 partially covered
         assert summary.total_overlap_rows == 3
         assert abs(summary.total_loaded_width_by_load["L1"] - 5.0) < 1e-4
+
+
+# ─── Longitudinal Sweep Tests ────────────────────────────────────────────────
+
+class TestLongitudinalSweep:
+
+    def test_longitudinal_sweep_returns_requested_vehicles(self):
+        result = compute_longitudinal_critical_positions(
+            clear_span=4.0,
+            clear_height=3.0,
+            num_cells=2,
+            increment=0.1,
+            vehicles=["CLASS_70R_WHEELED", "CLASS_A"],
+        )
+
+        vehicles = result["vehicles"]
+        assert len(vehicles) == 2
+        assert vehicles[0]["vehicle_code"] == "CLASS_70R_WHEELED"
+        assert vehicles[1]["vehicle_code"] == "CLASS_A"
+
+    def test_longitudinal_sweep_group_results_present(self):
+        result = compute_longitudinal_critical_positions(
+            clear_span=4.0,
+            clear_height=3.0,
+            num_cells=2,
+            increment=0.1,
+            vehicles=["DOUBLE_AXLE_BOGIE"],
+        )
+        groups = {g["group"] for g in result["vehicles"][0]["group_results"]}
+        assert groups == {"TOP_SLAB", "BOTTOM_SLAB", "SIDE_WALL", "INTERMEDIATE_WALL"}
+
+
+# ─── Serviceability / Foundation Checks ──────────────────────────────────────
+
+class TestServiceabilityAndFoundationChecks:
+
+    def test_bearing_fails_when_min_pressure_is_negative(self):
+        result = check_bearing_pressure(
+            total_vertical_load=200.0,
+            base_width=4.0,
+            eccentricity=0.8,
+            allowable_bearing=120.0,
+            culvert_length=1.0,
+        )
+        assert result.min_base_pressure < 0
+        assert result.status == "FAIL"
+
+    def test_deflection_service_stress_reduces_with_more_steel(self):
+        low_steel = check_deflection(
+            span=4.0,
+            slab_thickness=0.30,
+            ast_provided=400.0,
+            support_condition="CONTINUOUS",
+        )
+        high_steel = check_deflection(
+            span=4.0,
+            slab_thickness=0.30,
+            ast_provided=2400.0,
+            support_condition="CONTINUOUS",
+        )
+
+        assert high_steel.fs < low_steel.fs
+        assert "reference pt=0.50%" in low_steel.formula

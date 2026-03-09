@@ -67,6 +67,8 @@ def generate_staad_text(
         "IRC_CLASS_AA": "Live",
         "IRC_70R": "Live",
         "IRC_CLASS_A": "Live",
+        "SINGLE_AXLE_BOGIE": "Live",
+        "DOUBLE_AXLE_BOGIE": "Live",
         "EARTH_PRESSURE": "None",
         "SURCHARGE": "None",
         "HYDROSTATIC": "None",

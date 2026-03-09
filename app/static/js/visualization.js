@@ -34,6 +34,7 @@ function updateVisualization() {
     if (!svg) return;
 
     const members = collectMembers();
+    const loads = collectLoads();
     if (members.length === 0) {
         svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#5a6478" font-size="14">Generate members to see visualization</text>';
         return;
@@ -42,10 +43,17 @@ function updateVisualization() {
     const totalWidth = parseFloat(document.getElementById('total-width').value) || 8.5;
     const containerWidth = svg.parentElement.clientWidth - 32;
     const svgWidth = Math.max(containerWidth, 600);
-    const padding = { left: 50, right: 30, top: 30, bottom: 40 };
+    const padding = { left: 50, right: 30, top: 20, bottom: 40 };
     const drawWidth = svgWidth - padding.left - padding.right;
-    const memberHeight = 60;
-    const svgHeight = 150;
+    const memberHeight = 56;
+    const loadHeight = 18;
+    const loadGap = 4;
+    const loadsTop = padding.top;
+    const membersTop = loads.length > 0
+        ? loadsTop + loads.length * (loadHeight + loadGap) + 12
+        : padding.top + 6;
+    const axisY = membersTop + memberHeight + 10;
+    const svgHeight = axisY + 34;
 
     svg.setAttribute('width', svgWidth);
     svg.setAttribute('height', svgHeight);
@@ -54,15 +62,32 @@ function updateVisualization() {
     const scale = drawWidth / totalWidth;
     let html = '';
 
+    // Load bars
+    loads.forEach((lo, i) => {
+        const x = padding.left + Math.max(0, lo.start) * scale;
+        const endX = padding.left + Math.min(totalWidth, lo.end) * scale;
+        const w = Math.max(0, endX - x);
+        const y = loadsTop + i * (loadHeight + loadGap);
+        const color = LOAD_COLORS[i % LOAD_COLORS.length];
+
+        html += `<rect x="${x}" y="${y}" width="${w}" height="${loadHeight}" fill="${color}" stroke="${color.replace('0.35', '0.6')}" stroke-width="1" rx="3"/>`;
+        if (w > 20) {
+            html += `<text x="${x + 4}" y="${y + 12}" fill="#e8edf5" font-size="10" font-family="JetBrains Mono, monospace">${lo.id}</text>`;
+        }
+    });
+    if (loads.length > 0) {
+        html += `<text x="${padding.left - 8}" y="${loadsTop + 13}" text-anchor="end" fill="#5a6478" font-size="10">Loads</text>`;
+    }
+
     // Axis
-    html += `<line x1="${padding.left}" y1="${padding.top + memberHeight + 10}" x2="${padding.left + drawWidth}" y2="${padding.top + memberHeight + 10}" stroke="#2a3347" stroke-width="1"/>`;
+    html += `<line x1="${padding.left}" y1="${axisY}" x2="${padding.left + drawWidth}" y2="${axisY}" stroke="#2a3347" stroke-width="1"/>`;
 
     // Tick marks
     const tickInterval = totalWidth <= 5 ? 0.5 : totalWidth <= 15 ? 1 : 2;
     for (let t = 0; t <= totalWidth; t += tickInterval) {
         const x = padding.left + t * scale;
-        html += `<line x1="${x}" y1="${padding.top + memberHeight + 6}" x2="${x}" y2="${padding.top + memberHeight + 14}" stroke="#5a6478" stroke-width="1"/>`;
-        html += `<text x="${x}" y="${padding.top + memberHeight + 28}" text-anchor="middle" fill="#5a6478" font-size="10" font-family="JetBrains Mono, monospace">${t.toFixed(1)}</text>`;
+        html += `<line x1="${x}" y1="${axisY - 4}" x2="${x}" y2="${axisY + 4}" stroke="#5a6478" stroke-width="1"/>`;
+        html += `<text x="${x}" y="${axisY + 18}" text-anchor="middle" fill="#5a6478" font-size="10" font-family="JetBrains Mono, monospace">${t.toFixed(1)}</text>`;
     }
 
     // Member blocks
@@ -71,16 +96,16 @@ function updateVisualization() {
         const w = (m.end - m.start) * scale;
         const color = MEMBER_COLORS[i % MEMBER_COLORS.length];
 
-        html += `<rect x="${x}" y="${padding.top}" width="${w}" height="${memberHeight}" fill="${color}" stroke="#2a3347" stroke-width="1" rx="2"/>`;
+        html += `<rect x="${x}" y="${membersTop}" width="${w}" height="${memberHeight}" fill="${color}" stroke="#2a3347" stroke-width="1" rx="2"/>`;
 
         // Member ID label
         if (w > 25) {
-            html += `<text x="${x + w / 2}" y="${padding.top + memberHeight / 2 + 4}" text-anchor="middle" fill="#8892a8" font-size="${w > 40 ? 10 : 8}" font-family="JetBrains Mono, monospace">${m.id}</text>`;
+            html += `<text x="${x + w / 2}" y="${membersTop + memberHeight / 2 + 4}" text-anchor="middle" fill="#8892a8" font-size="${w > 40 ? 10 : 8}" font-family="JetBrains Mono, monospace">${m.id}</text>`;
         }
     });
 
     // "Members" label
-    html += `<text x="${padding.left - 8}" y="${padding.top + memberHeight / 2 + 4}" text-anchor="end" fill="#5a6478" font-size="10" font-family="Inter, sans-serif">Members</text>`;
+    html += `<text x="${padding.left - 8}" y="${membersTop + memberHeight / 2 + 4}" text-anchor="end" fill="#5a6478" font-size="10" font-family="Inter, sans-serif">Members</text>`;
 
     svg.innerHTML = html;
 }
@@ -89,10 +114,15 @@ function updateVisualization() {
 
 function updateResultsVisualization() {
     const svg = document.getElementById('results-svg');
-    if (!svg || !currentOverlaps) return;
+    if (!svg) return;
 
     const members = collectMembers();
     const loads = collectLoads();
+    const overlaps = resultsDirty ? [] : (currentOverlaps || []);
+    if (members.length === 0) {
+        svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#5a6478" font-size="14">Add members to preview results visualization</text>';
+        return;
+    }
     const totalWidth = parseFloat(document.getElementById('total-width').value) || 8.5;
 
     const containerWidth = svg.parentElement.clientWidth - 32;
@@ -144,7 +174,7 @@ function updateResultsVisualization() {
     });
 
     // Overlap highlights
-    for (const r of currentOverlaps) {
+    for (const r of overlaps) {
         if (r.loaded_length > 0) {
             const x = padding.left + r.overlap_start_global * scale;
             const w = r.loaded_length * scale;

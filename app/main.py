@@ -10,6 +10,7 @@ import io
 import json
 from datetime import date
 from flask import Flask, render_template, request, jsonify, send_file
+from pydantic import ValidationError
 
 from app.models.schemas import (
     ProjectSettings, MemberSegment, LoadPatch, OverlapResult,
@@ -22,7 +23,8 @@ from app.core.geometry import (
 )
 from app.core.loads import (
     create_load, apply_dispersion, parse_loads_csv,
-    irc_class_aa_tracked, irc_70r_tracked, irc_class_a_wheel_line,
+    irc_class_aa_tracked, irc_70r_tracked, irc_70r_wheeled,
+    irc_class_a_wheel_line, irc_single_axle_bogie, irc_double_axle_bogie,
     earth_pressure_load, water_pressure_load, surcharge_load,
     dead_load_fill, wearing_course_load,
 )
@@ -43,11 +45,15 @@ def index():
 def calculate():
     """Run overlap engine and return results."""
     try:
-        data = request.json
-
-        settings = _parse_settings(data.get("settings", {}))
-        members = _parse_members(data.get("members", []), settings)
-        loads = _parse_loads(data.get("loads", []))
+        data = request.json or {}
+        try:
+            settings, members, loads = _parse_request_payload(data)
+        except ValueError as e:
+            return jsonify({
+                "success": False,
+                "error": "Input parsing failed",
+                "details": [str(e)],
+            }), 400
 
         # Validate
         messages = validate_all(settings, members, loads)
@@ -85,10 +91,15 @@ def calculate():
 def export_excel():
     """Generate and download Excel workbook."""
     try:
-        data = request.json
-        settings = _parse_settings(data.get("settings", {}))
-        members = _parse_members(data.get("members", []), settings)
-        loads = _parse_loads(data.get("loads", []))
+        data = request.json or {}
+        try:
+            settings, members, loads = _parse_request_payload(data)
+        except ValueError as e:
+            return jsonify({
+                "success": False,
+                "error": "Input parsing failed",
+                "details": [str(e)],
+            }), 400
 
         overlaps = compute_overlaps(
             members, loads,
@@ -118,10 +129,15 @@ def export_excel():
 def export_staad():
     """Generate and download STAAD text file."""
     try:
-        data = request.json
-        settings = _parse_settings(data.get("settings", {}))
-        members = _parse_members(data.get("members", []), settings)
-        loads = _parse_loads(data.get("loads", []))
+        data = request.json or {}
+        try:
+            settings, members, loads = _parse_request_payload(data)
+        except ValueError as e:
+            return jsonify({
+                "success": False,
+                "error": "Input parsing failed",
+                "details": [str(e)],
+            }), 400
 
         overlaps = compute_overlaps(
             members, loads,
@@ -150,10 +166,15 @@ def export_staad():
 def export_csv():
     """Export overlap results as CSV."""
     try:
-        data = request.json
-        settings = _parse_settings(data.get("settings", {}))
-        members = _parse_members(data.get("members", []), settings)
-        loads = _parse_loads(data.get("loads", []))
+        data = request.json or {}
+        try:
+            settings, members, loads = _parse_request_payload(data)
+        except ValueError as e:
+            return jsonify({
+                "success": False,
+                "error": "Input parsing failed",
+                "details": [str(e)],
+            }), 400
 
         overlaps = compute_overlaps(
             members, loads,
@@ -235,7 +256,7 @@ def load_project():
 
 @app.route("/api/templates/irc", methods=["POST"])
 def get_irc_template():
-    """Generate IRC load template."""
+    """Generate IRC load templates with full vehicle metadata in notes."""
     try:
         data = request.json
         template_type = data.get("template", "IRC_CLASS_AA")
@@ -244,10 +265,16 @@ def get_irc_template():
 
         if template_type == "IRC_CLASS_AA":
             loads = irc_class_aa_tracked(offset, load_case)
-        elif template_type == "IRC_70R":
+        elif template_type in ("IRC_70R", "IRC_70R_TRACKED"):
             loads = irc_70r_tracked(offset, load_case)
+        elif template_type == "IRC_70R_WHEELED":
+            loads = irc_70r_wheeled(offset, load_case)
         elif template_type == "IRC_CLASS_A":
             loads = irc_class_a_wheel_line(offset, load_case)
+        elif template_type == "SINGLE_AXLE_BOGIE":
+            loads = irc_single_axle_bogie(offset, load_case)
+        elif template_type == "DOUBLE_AXLE_BOGIE":
+            loads = irc_double_axle_bogie(offset, load_case)
         else:
             return jsonify({"success": False, "error": f"Unknown template: {template_type}"}), 400
 
@@ -339,6 +366,8 @@ from app.core.smart_features import (
     suggest_clear_cover,
     # Phase 3: Premium
     compute_settlement,
+    # Longitudinal moving-load sweep
+    compute_longitudinal_critical_positions,
 )
 
 
@@ -393,6 +422,56 @@ def smart_vehicle_sweep():
             kerb_clearance=float(data.get("kerb_clearance", 1.2)),
             step_size=float(data.get("step_size", 0.1)),
         )
+        return jsonify({"success": True, "result": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/smart/longitudinal-critical", methods=["POST"])
+def smart_longitudinal_critical():
+    """Run longitudinal sweep using current Loads + Members + Settings tabs."""
+    try:
+        data = request.json or {}
+        try:
+            settings, members, loads = _parse_request_payload(data)
+            increment = _as_required_float(data.get("increment", 0.1), "Results tab: Increment")
+        except ValueError as e:
+            return jsonify({
+                "success": False,
+                "error": "Input parsing failed",
+                "details": [str(e)],
+            }), 400
+
+        vehicles, matched_load_ids = _infer_sweep_vehicles_from_loads(loads)
+        input_errors = _validate_sweep_inputs(settings, members, loads, vehicles, increment)
+        if input_errors:
+            return jsonify({
+                "success": False,
+                "error": "Sweep input validation failed",
+                "details": input_errors,
+            }), 400
+
+        geometry = _infer_sweep_geometry(settings, members)
+
+        result = compute_longitudinal_critical_positions(
+            clear_span=geometry["clear_span"],
+            clear_height=geometry["clear_height"],
+            top_slab_thickness=geometry["top_slab_thickness"],
+            bottom_slab_thickness=geometry["bottom_slab_thickness"],
+            wall_thickness=geometry["wall_thickness"],
+            mid_wall_thickness=geometry["mid_wall_thickness"],
+            num_cells=geometry["num_cells"],
+            increment=increment,
+            fck=float(data.get("fck", 30.0)),
+            vehicles=vehicles,
+        )
+
+        result["inference"] = {
+            "vehicles_from_loads": vehicles,
+            "matched_load_ids": matched_load_ids,
+            "geometry_source": "members + project settings",
+            "geometry": geometry,
+        }
         return jsonify({"success": True, "result": result})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -784,25 +863,106 @@ def smart_settlement():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+def _parse_request_payload(data: dict) -> tuple[ProjectSettings, list[MemberSegment], list[LoadPatch]]:
+    """Parse settings, members, and loads with consistent 400-friendly errors."""
+    try:
+        settings = _parse_settings(data.get("settings", {}))
+        members = _parse_members(data.get("members", []), settings)
+        loads = _parse_loads(data.get("loads", []))
+        return settings, members, loads
+    except (ValidationError, ValueError, TypeError, KeyError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def _is_missing(value) -> bool:
+    return value is None or (isinstance(value, str) and value.strip() == "")
+
+
+def _as_required_float(value, field_name: str) -> float:
+    if _is_missing(value):
+        raise ValueError(f"{field_name} is required.")
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be a valid number.") from exc
+
+
+def _as_optional_float(value, field_name: str) -> float | None:
+    if _is_missing(value):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be a valid number.") from exc
+
+
+def _as_required_int(value, field_name: str) -> int:
+    if _is_missing(value):
+        raise ValueError(f"{field_name} is required.")
+    try:
+        n = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be a valid integer.") from exc
+    if not n.is_integer():
+        raise ValueError(f"{field_name} must be a whole number.")
+    return int(n)
+
+
+def _as_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
 def _parse_settings(data: dict) -> ProjectSettings:
+    if not isinstance(data, dict):
+        raise ValueError("Project Settings payload must be an object.")
+
+    structure_raw = str(data.get("structure_type", "BRIDGE_DECK")).strip().upper()
+    axis_raw = str(data.get("reference_axis", "LEFT_EDGE")).strip().upper()
+    units_raw = str(data.get("units", "m")).strip().lower()
+    overhang_raw = str(data.get("overhang_policy", "ALLOW")).strip().upper()
+
+    try:
+        structure_type = StructureType(structure_raw)
+    except ValueError as exc:
+        raise ValueError(f'Project Settings: structure_type "{structure_raw}" is invalid.') from exc
+    try:
+        reference_axis = ReferenceAxis(axis_raw)
+    except ValueError as exc:
+        raise ValueError(f'Project Settings: reference_axis "{axis_raw}" is invalid.') from exc
+    try:
+        units = CoordinateUnit(units_raw)
+    except ValueError as exc:
+        raise ValueError(f'Project Settings: units "{units_raw}" is invalid.') from exc
+    try:
+        overhang_policy = OverhangPolicy(overhang_raw)
+    except ValueError as exc:
+        raise ValueError(f'Project Settings: overhang_policy "{overhang_raw}" is invalid.') from exc
+
     return ProjectSettings(
-        project_name=data.get("project_name", "Untitled Project"),
-        bridge_name=data.get("bridge_name", ""),
-        engineer=data.get("engineer", ""),
-        project_date=data.get("project_date", date.today().isoformat()),
-        comments=data.get("comments", ""),
-        structure_type=StructureType(data.get("structure_type", "BRIDGE_DECK")),
+        project_name=str(data.get("project_name", "Untitled Project")),
+        bridge_name=str(data.get("bridge_name", "")),
+        engineer=str(data.get("engineer", "")),
+        project_date=str(data.get("project_date", date.today().isoformat())),
+        comments=str(data.get("comments", "")),
+        structure_type=structure_type,
         total_width=float(data.get("total_width", 8.5)),
-        reference_axis=ReferenceAxis(data.get("reference_axis", "LEFT_EDGE")),
+        reference_axis=reference_axis,
         custom_datum=float(data.get("custom_datum", 0.0)),
         culvert_height=float(data.get("culvert_height", 0.0)),
         fill_depth=float(data.get("fill_depth", 0.0)),
         slab_thickness=float(data.get("slab_thickness", 0.3)),
+        bottom_slab_thickness=float(data.get("bottom_slab_thickness", 0.35)),
         wall_thickness=float(data.get("wall_thickness", 0.3)),
         decimal_precision=int(data.get("decimal_precision", 2)),
-        units=CoordinateUnit(data.get("units", "m")),
-        overhang_policy=OverhangPolicy(data.get("overhang_policy", "ALLOW")),
-        include_zero_overlaps=bool(data.get("include_zero_overlaps", False)),
+        units=units,
+        overhang_policy=overhang_policy,
+        include_zero_overlaps=_as_bool(data.get("include_zero_overlaps", False), default=False),
         start_member_number=int(data.get("start_member_number", 1001)),
         member_increment=int(data.get("member_increment", 1)),
     )
@@ -811,45 +971,304 @@ def _parse_settings(data: dict) -> ProjectSettings:
 def _parse_members(data: list, settings: ProjectSettings) -> list[MemberSegment]:
     """Parse members from request data, supporting auto and manual modes."""
     if not data:
-        # Auto-generate from settings
         return generate_equal_segments(
             total_width=settings.total_width,
             num_segments=12,
             start_number=settings.start_member_number,
             increment=settings.member_increment,
         )
+    if not isinstance(data, list):
+        raise ValueError("Members tab: rows must be an array.")
 
-    members = []
-    for row in data:
-        members.append(MemberSegment(
-            id=int(row["id"]),
-            start=float(row["start"]),
-            end=float(row["end"]),
-            label=row.get("label", ""),
-            group=MemberGroup(row.get("group", "GENERAL")),
-        ))
+    members: list[MemberSegment] = []
+    allowed_groups = ", ".join(g.value for g in MemberGroup)
+
+    for idx, row in enumerate(data, start=1):
+        if not isinstance(row, dict):
+            raise ValueError(f"Members row {idx}: row must be an object.")
+
+        prefix = f"Members row {idx}"
+        member_id = _as_required_int(row.get("id"), f"{prefix} > Member ID")
+        start = _as_required_float(row.get("start"), f"{prefix} > Start")
+        end = _as_required_float(row.get("end"), f"{prefix} > End")
+        group_raw = str(row.get("group", "GENERAL")).strip().upper()
+        label = str(row.get("label", ""))
+
+        try:
+            group = MemberGroup(group_raw)
+        except ValueError as exc:
+            raise ValueError(
+                f'{prefix} > Group "{group_raw}" is invalid. Allowed: {allowed_groups}.'
+            ) from exc
+
+        try:
+            members.append(MemberSegment(
+                id=member_id,
+                start=start,
+                end=end,
+                label=label,
+                group=group,
+            ))
+        except (ValidationError, ValueError) as exc:
+            raise ValueError(f"{prefix}: {exc}") from exc
+
     return members
 
 
 def _parse_loads(data: list) -> list[LoadPatch]:
     """Parse loads from request data."""
-    loads = []
-    for row in data:
-        loads.append(LoadPatch(
-            id=str(row.get("id", f"L{len(loads)+1}")),
-            load_case=row.get("load_case", "LC1"),
-            load_type=LoadType(row.get("load_type", "PARTIAL_UDL")),
-            start=float(row["start"]),
-            end=float(row["end"]),
-            intensity=float(row["intensity"]),
-            intensity_end=float(row["intensity_end"]) if row.get("intensity_end") else None,
-            direction=LoadDirection(row.get("direction", "GY")),
-            notes=row.get("notes", ""),
-            dispersion_enabled=bool(row.get("dispersion_enabled", False)),
-            fill_depth_override=float(row["fill_depth_override"]) if row.get("fill_depth_override") else None,
-            contact_width=float(row["contact_width"]) if row.get("contact_width") else None,
-        ))
+    if not isinstance(data, list):
+        raise ValueError("Loads tab: rows must be an array.")
+
+    loads: list[LoadPatch] = []
+    allowed_types = ", ".join(t.value for t in LoadType)
+    allowed_dirs = ", ".join(d.value for d in LoadDirection)
+
+    for idx, row in enumerate(data, start=1):
+        if not isinstance(row, dict):
+            raise ValueError(f"Loads row {idx}: row must be an object.")
+
+        prefix = f"Loads row {idx}"
+        load_id = str(row.get("id", "")).strip() or f"L{idx}"
+        load_case = str(row.get("load_case", "")).strip() or "LC1"
+        load_type_raw = str(row.get("load_type", "PARTIAL_UDL")).strip().upper()
+        direction_raw = str(row.get("direction", "GY")).strip().upper()
+
+        try:
+            load_type = LoadType(load_type_raw)
+        except ValueError as exc:
+            raise ValueError(
+                f'{prefix} > Type "{load_type_raw}" is invalid. Allowed: {allowed_types}.'
+            ) from exc
+        try:
+            direction = LoadDirection(direction_raw)
+        except ValueError as exc:
+            raise ValueError(
+                f'{prefix} > Direction "{direction_raw}" is invalid. Allowed: {allowed_dirs}.'
+            ) from exc
+
+        start = _as_required_float(row.get("start"), f"{prefix} > Start")
+        end = _as_required_float(row.get("end"), f"{prefix} > End")
+        intensity = _as_required_float(row.get("intensity"), f"{prefix} > Intensity")
+        intensity_end = _as_optional_float(row.get("intensity_end"), f"{prefix} > Intensity End")
+
+        try:
+            loads.append(LoadPatch(
+                id=load_id,
+                load_case=load_case,
+                load_type=load_type,
+                start=start,
+                end=end,
+                intensity=intensity,
+                intensity_end=intensity_end,
+                direction=direction,
+                notes=str(row.get("notes", "")),
+                dispersion_enabled=_as_bool(row.get("dispersion_enabled", False), default=False),
+                fill_depth_override=_as_optional_float(
+                    row.get("fill_depth_override"), f"{prefix} > Fill Depth Override"
+                ),
+                contact_width=_as_optional_float(row.get("contact_width"), f"{prefix} > Contact Width"),
+            ))
+        except (ValidationError, ValueError) as exc:
+            raise ValueError(f"{prefix}: {exc}") from exc
+
     return loads
+
+
+def _validate_sweep_inputs(
+    settings: ProjectSettings,
+    members: list[MemberSegment],
+    loads: list[LoadPatch],
+    vehicles: list[str],
+    increment: float,
+) -> list[str]:
+    """Validate required fields/tags for longitudinal sweep auto-calculation."""
+    errors: list[str] = []
+
+    if settings.structure_type not in {
+        StructureType.BOX_CULVERT_1CELL,
+        StructureType.BOX_CULVERT_2CELL,
+        StructureType.BOX_CULVERT_3CELL,
+        StructureType.BOX_CULVERT_4CELL,
+    }:
+        errors.append("Project Settings: Structure Type must be BOX_CULVERT_1/2/3/4CELL.")
+    if settings.total_width <= 0:
+        errors.append("Project Settings: Total Width must be > 0.")
+    if settings.culvert_height <= 0:
+        errors.append("Project Settings: Culvert Height must be > 0.")
+    if settings.slab_thickness <= 0:
+        errors.append("Project Settings: Top Slab Thickness must be > 0.")
+    if settings.bottom_slab_thickness <= 0:
+        errors.append("Project Settings: Bottom Slab Thickness must be > 0.")
+    if settings.wall_thickness <= 0:
+        errors.append("Project Settings: Wall Thickness must be > 0.")
+    if increment <= 0:
+        errors.append("Results tab: Increment must be > 0.")
+
+    if not members:
+        errors.append("Members tab: at least one member row is required.")
+    else:
+        groups = {m.group.value for m in members}
+        for g in (
+            MemberGroup.TOP_SLAB.value,
+            MemberGroup.BOTTOM_SLAB.value,
+            MemberGroup.LEFT_WALL.value,
+            MemberGroup.RIGHT_WALL.value,
+        ):
+            if g not in groups:
+                errors.append(f'Members tab: group "{g}" is required.')
+
+        req_cells = {
+            StructureType.BOX_CULVERT_1CELL: 1,
+            StructureType.BOX_CULVERT_2CELL: 2,
+            StructureType.BOX_CULVERT_3CELL: 3,
+            StructureType.BOX_CULVERT_4CELL: 4,
+        }.get(settings.structure_type, 1)
+        if req_cells >= 2:
+            middle_count = len([g for g in groups if g.startswith("MIDDLE_WALL_")])
+            if middle_count < req_cells - 1:
+                errors.append(
+                    f"Members tab: for {req_cells} cells, at least {req_cells - 1} MIDDLE_WALL_* groups are required."
+                )
+
+    if not loads:
+        errors.append("Loads tab: at least one vehicle load row is required.")
+    if not vehicles:
+        errors.append(
+            "Loads tab: no recognizable sweep vehicle found. Use IRC_70R / IRC_CLASS_A / IRC_CLASS_AA load types, "
+            "SINGLE_AXLE_BOGIE / DOUBLE_AXLE_BOGIE load types, or bogie keywords in ID/notes "
+            "(single bogie, double bogie, max single axle, max bogie)."
+        )
+
+    return errors
+
+
+def _infer_sweep_vehicles_from_loads(loads: list[LoadPatch]) -> tuple[list[str], list[str]]:
+    """
+    Infer longitudinal sweep vehicles from Loads tab entries.
+
+    Mapping rules:
+    - load_type IRC_70R + text contains 'wheeled'/'wheel' -> CLASS_70R_WHEELED
+    - load_type IRC_70R otherwise -> CLASS_70R_TRACKED
+    - load_type IRC_CLASS_A -> CLASS_A
+    - load_type SINGLE_AXLE_BOGIE -> SINGLE_AXLE_BOGIE
+    - load_type DOUBLE_AXLE_BOGIE -> DOUBLE_AXLE_BOGIE
+    - text contains 'single' + 'bogie' -> SINGLE_AXLE_BOGIE
+    - text contains 'double' + 'bogie' or 'max bogie' -> DOUBLE_AXLE_BOGIE
+    """
+    vehicles: list[str] = []
+    matched_load_ids: list[str] = []
+
+    def add_vehicle(code: str, load_id: str):
+        if code not in vehicles:
+            vehicles.append(code)
+        if load_id not in matched_load_ids:
+            matched_load_ids.append(load_id)
+
+    for lo in loads:
+        text = f"{lo.id} {lo.notes}".upper()
+        code = None
+
+        if lo.load_type == LoadType.IRC_70R:
+            if "WHEELED" in text or "WHEEL" in text:
+                code = "CLASS_70R_WHEELED"
+            else:
+                code = "CLASS_70R_TRACKED"
+        elif lo.load_type == LoadType.IRC_CLASS_AA:
+            # Class AA tracked footprint is treated as tracked heavy vehicle in sweep model.
+            code = "CLASS_70R_TRACKED"
+        elif lo.load_type == LoadType.IRC_CLASS_A:
+            code = "CLASS_A"
+        elif lo.load_type == LoadType.SINGLE_AXLE_BOGIE:
+            code = "SINGLE_AXLE_BOGIE"
+        elif lo.load_type == LoadType.DOUBLE_AXLE_BOGIE:
+            code = "DOUBLE_AXLE_BOGIE"
+        else:
+            # Bogie tags are usually added as custom load IDs/notes
+            if ("SINGLE" in text and "BOGIE" in text) or "MAX SINGLE AXLE" in text:
+                code = "SINGLE_AXLE_BOGIE"
+            elif ("DOUBLE" in text and "BOGIE" in text) or "MAX BOGIE" in text:
+                code = "DOUBLE_AXLE_BOGIE"
+
+        if code:
+            add_vehicle(code, lo.id)
+
+    return vehicles, matched_load_ids
+
+
+def _infer_sweep_geometry(
+    settings: ProjectSettings,
+    members: list[MemberSegment],
+) -> dict:
+    """
+    Infer longitudinal frame geometry from Members tab + project settings.
+
+    Because Members tab is transverse, we use:
+    - total width from members envelope or settings.total_width
+    - number of cells from middle-wall groups (fallback: structure type)
+    - clear height from wall-member envelope (fallback: settings.culvert_height)
+    - slab/wall thickness from settings
+    """
+    total_width = settings.total_width
+    if members:
+        min_x = min(m.start for m in members)
+        max_x = max(m.end for m in members)
+        if max_x > min_x:
+            total_width = max_x - min_x
+
+    # Cell count from member groups first
+    middle_groups = set()
+    wall_members = []
+    for m in members:
+        g = m.group.value if hasattr(m.group, "value") else str(m.group)
+        if g.startswith("MIDDLE_WALL_"):
+            middle_groups.add(g)
+        if g in (
+            MemberGroup.LEFT_WALL.value,
+            MemberGroup.RIGHT_WALL.value,
+            MemberGroup.MIDDLE_WALL_1.value,
+            MemberGroup.MIDDLE_WALL_2.value,
+            MemberGroup.MIDDLE_WALL_3.value,
+        ):
+            wall_members.append(m)
+
+    if middle_groups:
+        num_cells = len(middle_groups) + 1
+    else:
+        num_cells = {
+            StructureType.BOX_CULVERT_1CELL: 1,
+            StructureType.BOX_CULVERT_2CELL: 2,
+            StructureType.BOX_CULVERT_3CELL: 3,
+            StructureType.BOX_CULVERT_4CELL: 4,
+        }.get(settings.structure_type, 1)
+
+    clear_height = settings.culvert_height if settings.culvert_height > 0 else 3.0
+    if wall_members:
+        h_min = min(m.start for m in wall_members)
+        h_max = max(m.end for m in wall_members)
+        if h_max > h_min:
+            clear_height = h_max - h_min
+
+    wall_t = settings.wall_thickness if settings.wall_thickness > 0 else 0.30
+    mid_wall_t = wall_t
+    top_t = settings.slab_thickness if settings.slab_thickness > 0 else 0.30
+    bottom_t = settings.bottom_slab_thickness if settings.bottom_slab_thickness > 0 else 0.35
+
+    denom = max(num_cells, 1)
+    clear_span = (total_width - (2 * wall_t + max(0, num_cells - 1) * mid_wall_t)) / denom
+    if clear_span <= 0:
+        clear_span = total_width / denom if total_width > 0 else 4.0
+
+    return {
+        "clear_span": round(clear_span, 4),
+        "clear_height": round(clear_height, 4),
+        "top_slab_thickness": round(top_t, 4),
+        "bottom_slab_thickness": round(bottom_t, 4),
+        "wall_thickness": round(wall_t, 4),
+        "mid_wall_thickness": round(mid_wall_t, 4),
+        "num_cells": int(max(1, num_cells)),
+        "total_width": round(total_width, 4),
+    }
 
 
 if __name__ == "__main__":

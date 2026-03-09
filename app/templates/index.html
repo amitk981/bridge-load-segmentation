@@ -240,6 +240,7 @@
 
     <!-- Main Content -->
     <main class="main-content">
+        <div id="app-messages" class="validation-container app-messages" style="display:none"></div>
 
         <!-- ═══ USER GUIDE TAB ═══ -->
         <section id="tab-guide" class="tab-panel active">
@@ -260,35 +261,35 @@
                         <div class="step-number">1</div>
                         <div class="step-content">
                             <h3>Project Settings</h3>
-                            <p>Set bridge/culvert width, structure type, fill depth, units</p>
+                            <p>Set structure type, width, height, top/bottom slab thickness, wall thickness, units</p>
                         </div>
                     </div>
                     <div class="guide-step">
                         <div class="step-number">2</div>
                         <div class="step-content">
                             <h3>Define Members</h3>
-                            <p>Auto-divide width into equal strips, or define manually</p>
+                            <p>Auto-divide width or define manually with correct groups (top, bottom, walls)</p>
                         </div>
                     </div>
                     <div class="guide-step">
                         <div class="step-number">3</div>
                         <div class="step-content">
                             <h3>Define Loads</h3>
-                            <p>Add loads manually or use IRC/culvert templates</p>
+                            <p>Add loads manually, from templates, or by CSV import for bulk updates</p>
                         </div>
                     </div>
                     <div class="guide-step">
                         <div class="step-number">4</div>
                         <div class="step-content">
-                            <h3>Calculate</h3>
-                            <p>Engine computes d1/d2 for every overlap pair</p>
+                            <h3>Check Readiness</h3>
+                            <p>Use Run Readiness panel to fix missing/invalid fields before run</p>
                         </div>
                     </div>
                     <div class="guide-step">
                         <div class="step-number">5</div>
                         <div class="step-content">
-                            <h3>Export</h3>
-                            <p>Copy STAAD text, download Excel, or save project</p>
+                            <h3>Run & Review</h3>
+                            <p>Auto-update or run manually, verify snapshot + visuals, then export STAAD/Excel/CSV</p>
                         </div>
                     </div>
                 </div>
@@ -317,7 +318,8 @@
                         <ul>
                             <li>Define members once → auto-generate equal strips</li>
                             <li>Click IRC template → loads auto-populated per IRC 6:2017</li>
-                            <li>Click Calculate → all d1/d2 computed <strong>instantly</strong></li>
+                            <li>Run Readiness panel shows missing fields instantly before calculation</li>
+                            <li>Click Calculate (or keep auto-update ON) → all d1/d2 computed <strong>instantly</strong></li>
                             <li>Copy STAAD commands → paste directly into STAAD.Pro editor</li>
                             <li>Excel export for documentation / checking / client submission</li>
                         </ul>
@@ -378,6 +380,23 @@
                                 <td>2-5m typical for culverts</td>
                             </tr>
                             <tr>
+                                <td><strong>Top Slab Thickness</strong></td>
+                                <td>Top slab thickness used in longitudinal sweep stiffness model and reporting.</td>
+                                <td>0.25-0.45m (typical)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Bottom Slab Thickness</strong></td>
+                                <td>Bottom slab thickness used in longitudinal sweep stiffness model. Keep this
+                                    explicitly filled for reliable top/bottom slab force outputs.</td>
+                                <td>0.30-0.50m (typical)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Wall Thickness</strong></td>
+                                <td>Outer/intermediate wall stiffness input for sweep and multi-cell geometry
+                                    inference.</td>
+                                <td>0.25-0.45m (typical)</td>
+                            </tr>
+                            <tr>
                                 <td><strong>Decimal Precision</strong></td>
                                 <td>Number of decimal places in d1/d2 calculations and STAAD export. <strong>Use 2 for
                                         meters, 0 for millimeters.</strong></td>
@@ -435,11 +454,17 @@
                             <tr>
                                 <td><strong>Group</strong></td>
                                 <td>For box culverts: which structural element this strip belongs to. Top Slab, Bottom
-                                    Slab, Left Wall, Right Wall, or Middle Wall.</td>
+                                    Slab, Left Wall, Right Wall, or Middle Wall (1/2/3).</td>
                                 <td>"General" for bridge decks</td>
                             </tr>
                         </tbody>
                     </table>
+
+                    <div class="guide-callout guide-callout-info">
+                        <strong>📥📤 Import / Export Use Case:</strong> Use Members CSV import when geometry is prepared
+                        in an external sheet, and export for checker review/record copy. During editing, Width updates
+                        live from Start/End so you can catch geometry mistakes early.
+                    </div>
 
                     <div class="guide-callout guide-callout-warning">
                         <strong>⚠️ Critical Check:</strong> Member boundaries must be contiguous and non-overlapping.
@@ -500,8 +525,20 @@
                                     walls), GZ = longitudinal (braking).</td>
                                 <td>98% of cases use GY for top slab loads</td>
                             </tr>
+                            <tr>
+                                <td><strong>Notes</strong></td>
+                                <td>Template metadata and custom tags. Used by sweep auto-detection for vehicle type
+                                    and bogie classification.</td>
+                                <td>Do not delete template metadata unless you plan to tag manually</td>
+                            </tr>
                         </tbody>
                     </table>
+
+                    <div class="guide-callout guide-callout-info">
+                        <strong>📥📤 Import / Export Use Case:</strong> Use Loads CSV import for bulk revisions from
+                        design sheets. Export captures all rows for traceability and client/checker review. Import
+                        reports skipped rows with row numbers if required columns are missing.
+                    </div>
 
                     <h4 style="margin-top:20px; color: var(--accent);">IRC Live Load Templates (Auto-populated per IRC
                         6:2017)</h4>
@@ -541,6 +578,30 @@
                                 <td>0.15m min</td>
                                 <td>−228.00 kN/m</td>
                             </tr>
+                            <tr>
+                                <td><strong>70R Wheeled</strong></td>
+                                <td>70R axle train</td>
+                                <td>0.61m wheel-line width</td>
+                                <td>2.44m</td>
+                                <td>1.2m min</td>
+                                <td>Derived from critical wheel line</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Single Axle Bogie</strong></td>
+                                <td>200 kN</td>
+                                <td>0.61m wheel-line width</td>
+                                <td>2.44m</td>
+                                <td>1.2m min</td>
+                                <td>Max single axle template</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Double Axle Bogie</strong></td>
+                                <td>200 + 200 kN</td>
+                                <td>4 wheel lines (2 axles)</td>
+                                <td>2.44m</td>
+                                <td>1.2m min</td>
+                                <td>Includes 1.22m longitudinal axle spacing metadata</td>
+                            </tr>
                         </tbody>
                     </table>
 
@@ -555,9 +616,52 @@
                 <!-- Results Guide -->
                 <div class="guide-section">
                     <h3 class="guide-section-title">📊 Tab 4: Results</h3>
-                    <p class="guide-section-desc">Shows the computed overlaps between each load and each member strip.
-                        The key outputs are <strong>d1 (front distance)</strong> and <strong>d2 (back distance)</strong>
-                        — these map directly to STAAD.Pro's <code>MEMBER LOAD UNI dir f1 d1 d2</code> syntax.</p>
+                    <p class="guide-section-desc">Results tab now includes live data-flow checks before run, overlap
+                        outputs, longitudinal sweep outputs, and visual QA panels. The key overlap outputs are
+                        <strong>d1 (front distance)</strong> and <strong>d2 (back distance)</strong> — these map
+                        directly to STAAD.Pro's <code>MEMBER LOAD UNI dir f1 d1 d2</code> syntax.</p>
+
+                    <table class="guide-table">
+                        <thead>
+                            <tr>
+                                <th>Panel</th>
+                                <th>Purpose</th>
+                                <th>How to Use</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Run Readiness & Data Flow</strong></td>
+                                <td>Shows whether overlap run and sweep run are blocked or ready.</td>
+                                <td>Fix all listed blockers before clicking Run.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Auto-update results while editing</strong></td>
+                                <td>Debounced auto-run of overlap calculation on input changes.</td>
+                                <td>Keep ON for interactive work; turn OFF if you want manual runs only.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Stale Results Banner</strong></td>
+                                <td>Warns when inputs changed after last run.</td>
+                                <td>Re-run before using output for STAAD/export.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Industry Output Snapshot</strong></td>
+                                <td>Case-wise and load-wise condensed summary for QA/client review.</td>
+                                <td>Use it for quick sanity checks before opening full overlap table.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Visualization Panels</strong></td>
+                                <td>Shows members, loads, overlap zones, and frame-like output view.</td>
+                                <td>Use as visual confirmation of load placement and affected members.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="guide-callout guide-callout-info">
+                        <strong>💡 Error Transparency:</strong> If run fails, missing/invalid fields are listed with row
+                        references (for members/loads) so you can correct the exact input causing the error.
+                    </div>
 
                     <div class="guide-callout guide-callout-info">
                         <strong>💡 d1 and d2 Explained:</strong><br>
@@ -608,6 +712,8 @@
                     <div class="guide-callout guide-callout-danger">
                         <strong>🔴 CRITICAL VERIFICATION:</strong> Before using results in production, always verify:
                         <ol style="margin:8px 0 0 20px; line-height:2;">
+                            <li><strong>Fresh run check:</strong> If stale banner is visible, re-run before exporting.
+                            </li>
                             <li><strong>Sum check:</strong> Σ(loaded_length) across all members for one load ≈ load
                                 span. If not, some load falls outside the bridge.</li>
                             <li><strong>Boundary check:</strong> d1 and d2 must be non-negative and d2 ≤ member width.
@@ -616,7 +722,16 @@
                                 direction.</li>
                             <li><strong>No missing members:</strong> Total affected members should match visual
                                 inspection of which strips are under the load.</li>
+                            <li><strong>Snapshot check:</strong> Case-wise/load-wise summary should match expected load
+                                case setup.</li>
                         </ol>
+                    </div>
+
+                    <div class="guide-callout guide-callout-info">
+                        <strong>🚚 Longitudinal Sweep (same tab):</strong> The sweep auto-reads vehicle intent from
+                        Loads tab and geometry from Members + Settings, then reports lead position for max sagging,
+                        max hogging, and max shear for top slab, bottom slab, side walls, and intermediate walls.
+                        Keep increment as needed (0.1m recommended for practical scanning).
                     </div>
                 </div>
 
@@ -643,6 +758,7 @@
                     <div class="guide-callout guide-callout-warning">
                         <strong>⚠️ Before Pasting into STAAD:</strong>
                         <ul style="margin:8px 0 0 16px; line-height:2;">
+                            <li>If run readiness is blocked, fix inputs first; export is intentionally blocked</li>
                             <li>Verify the member IDs match your STAAD model exactly</li>
                             <li>Confirm the load directions are correct (GY for slabs, GX for walls)</li>
                             <li>Check that your STAAD model uses the same units as this tool</li>
@@ -669,7 +785,7 @@
                         <tbody>
                             <tr>
                                 <td>Project_Info</td>
-                                <td>All project settings and metadata</td>
+                                <td>All project settings and metadata (including top/bottom slab and wall thickness)</td>
                                 <td>Traceability — who, what, when</td>
                             </tr>
                             <tr>
@@ -694,7 +810,7 @@
                             </tr>
                             <tr>
                                 <td>Summary</td>
-                                <td>QA statistics per load and per case</td>
+                                <td>QA statistics per load and per case (aligned with industry snapshot)</td>
                                 <td>Quick sanity check</td>
                             </tr>
                         </tbody>
@@ -970,13 +1086,13 @@
                                 <td>4</td>
                                 <td><strong>Load Distribution</strong></td>
                                 <td>✅ <strong>THIS TOOL</strong></td>
-                                <td>Define members, apply IRC templates, compute d1/d2 for all overlaps</td>
+                                <td>Define members/loads, clear readiness blockers, compute d1/d2 for all overlaps</td>
                             </tr>
                             <tr>
                                 <td>5</td>
                                 <td><strong>STAAD Load Input</strong></td>
                                 <td>✅ <strong>THIS TOOL</strong></td>
-                                <td>Generate MEMBER LOAD UNI/LIN commands, paste into STAAD</td>
+                                <td>Review snapshot + visuals, generate MEMBER LOAD UNI/LIN commands, paste into STAAD</td>
                             </tr>
                             <tr>
                                 <td>6</td>
@@ -1258,6 +1374,21 @@
                             <span class="field-hint">Wall height — used for EP/WP templates</span>
                         </div>
                         <div class="form-group">
+                            <label>Top Slab Thickness (m)</label>
+                            <input type="number" id="slab-thickness" value="0.30" step="0.01" min="0.01">
+                            <span class="field-hint">Required for longitudinal sweep stiffness model</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Bottom Slab Thickness (m)</label>
+                            <input type="number" id="bottom-slab-thickness" value="0.35" step="0.01" min="0.01">
+                            <span class="field-hint">Required for realistic sweep stiffness and design output reporting</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Wall Thickness (m)</label>
+                            <input type="number" id="wall-thickness" value="0.30" step="0.01" min="0.01">
+                            <span class="field-hint">Required for longitudinal sweep and multi-cell geometry</span>
+                        </div>
+                        <div class="form-group">
                             <label>Fill Depth (m)</label>
                             <input type="number" id="fill-depth" value="0.0" step="0.01" min="0">
                             <span class="field-hint">Earth fill above top slab (0 = no fill)</span>
@@ -1375,6 +1506,10 @@
                             <button class="btn btn-sm btn-ghost" onclick="exportMembersCSV()">📤 Export</button>
                         </div>
                     </div>
+                    <p class="field-hint" style="margin-bottom:10px">
+                        Import is useful for bulk member updates from existing sheets; export is useful for QA history,
+                        peer check, and re-use in other projects.
+                    </p>
                     <details class="csv-guide">
                         <summary>CSV Format Guide — Members</summary>
                         <div class="csv-guide-body">
@@ -1388,7 +1523,7 @@
                                 <li><strong>id</strong> — STAAD member number (integer)</li>
                                 <li><strong>start</strong> — Left boundary, metres from ref axis</li>
                                 <li><strong>end</strong> — Right boundary, metres from ref axis</li>
-                                <li><strong>group</strong> — GENERAL, TOP_SLAB, BOTTOM_SLAB, LEFT_WALL, RIGHT_WALL, MIDDLE_WALL_1</li>
+                                <li><strong>group</strong> — GENERAL, TOP_SLAB, BOTTOM_SLAB, LEFT_WALL, RIGHT_WALL, MIDDLE_WALL_1, MIDDLE_WALL_2, MIDDLE_WALL_3</li>
                                 <li><strong>label</strong> — Optional description</li>
                             </ul>
                         </div>
@@ -1437,6 +1572,8 @@
                 </div>
                 <p class="helper-text">Define each load's transverse position and intensity. Use the <strong>IRC
                         template buttons</strong> below to auto-populate standard vehicle loads per IRC 6:2017.
+                    Templates now include vehicle metadata in <strong>Notes</strong> (axle train, spacing, tyre/contact)
+                    so longitudinal sweep can auto-detect complete vehicle information.
                     <strong>Culvert buttons</strong> generate earth pressure, water pressure, and surcharge loads using
                     the height/fill depth from Settings. <strong>Intensity is negative for downward GY loads.</strong>
                 </p>
@@ -1446,10 +1583,16 @@
                     <span class="template-label">IRC Templates:</span>
                     <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('IRC_CLASS_AA')"
                         title="700kN tracked, 2 tracks × 0.85m, CTC 2.05m, 1.2m kerb clearance">Class AA</button>
-                    <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('IRC_70R')"
+                    <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('IRC_70R_TRACKED')"
                         title="700kN tracked, 2 tracks × 0.84m, CTC 2.06m, 1.2m kerb clearance">70R Tracked</button>
+                    <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('IRC_70R_WHEELED')"
+                        title="70R wheeled critical axle template with full axle-train metadata in notes">70R Wheeled</button>
                     <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('IRC_CLASS_A')"
                         title="114kN axle, 2 wheels × 0.25m, CTC 1.8m, 0.15m kerb clearance">Class A</button>
+                    <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('SINGLE_AXLE_BOGIE')"
+                        title="Max single axle bogie (20t) template with metadata">Single Axle Bogie</button>
+                    <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('DOUBLE_AXLE_BOGIE')"
+                        title="Max double axle bogie (20t+20t, 1.22m spacing) template with metadata">Double Axle Bogie</button>
                     <span class="template-label" style="margin-left:16px;">Culvert:</span>
                     <button class="btn btn-xs btn-accent-alt" onclick="addCulvertTemplate('EARTH_PRESSURE')"
                         title="Lateral EP: K₀γh, triangular 0 to K₀γH (TRAP)">Earth Pressure</button>
@@ -1471,6 +1614,10 @@
                         <button class="btn btn-sm btn-ghost" onclick="exportLoadsCSV()">📤 Export</button>
                     </div>
                 </div>
+                <p class="field-hint" style="margin-bottom:10px">
+                    Use import for bulk load filling and quick revision cycles; use export for client submissions,
+                    calculation traceability, and external review.
+                </p>
 
                 <details class="csv-guide">
                     <summary>CSV Format Guide — Loads</summary>
@@ -1483,7 +1630,7 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
                         <ul class="csv-columns">
                             <li><strong>id</strong> — Unique load identifier (L1, EP1, AA_T1)</li>
                             <li><strong>load_case</strong> — Case grouping (LC1, LC2 …)</li>
-                            <li><strong>load_type</strong> — PARTIAL_UDL, IRC_CLASS_AA, EARTH_PRESSURE …</li>
+                            <li><strong>load_type</strong> — PARTIAL_UDL, IRC_CLASS_AA, IRC_70R, IRC_CLASS_A, SINGLE_AXLE_BOGIE, DOUBLE_AXLE_BOGIE, EARTH_PRESSURE …</li>
                             <li><strong>start</strong> — Left edge position in metres</li>
                             <li><strong>end</strong> — Right edge position in metres</li>
                             <li><strong>intensity</strong> — kN/m (negative = downward for GY)</li>
@@ -1519,87 +1666,253 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
 
         <!-- ═══ Results Tab ═══ -->
         <section id="tab-results" class="tab-panel">
-            <!-- Summary Cards -->
-            <div class="summary-cards" id="summary-cards">
-                <div class="summary-card">
-                    <div class="summary-value" id="sum-members">0</div>
-                    <div class="summary-label">Total Members</div>
+            <div class="results-cluster">
+                <h3 class="results-cluster-title">Run Setup and Execution</h3>
+
+                <div class="card">
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-check" />
+                        </svg> Run Readiness and Data Flow</h2>
+                    <p class="helper-text">
+                        Live check of required data from Project Settings, Members, and Loads. If run is blocked, the
+                        exact missing or invalid fields are listed below.
+                    </p>
+                    <div class="flow-grid">
+                        <div class="flow-item">
+                            <span class="flow-label">Overlap Run</span>
+                            <span id="flow-ready-overlap" class="flow-status bad">Blocked</span>
+                        </div>
+                        <div class="flow-item">
+                            <span class="flow-label">Longitudinal Sweep</span>
+                            <span id="flow-ready-sweep" class="flow-status bad">Blocked</span>
+                        </div>
+                        <div class="flow-item">
+                            <span class="flow-label">Valid Members</span>
+                            <span id="flow-members-valid" class="flow-metric">0/0</span>
+                        </div>
+                        <div class="flow-item">
+                            <span class="flow-label">Valid Loads</span>
+                            <span id="flow-loads-valid" class="flow-metric">0/0</span>
+                        </div>
+                    </div>
+                    <div id="flow-blockers"></div>
                 </div>
-                <div class="summary-card">
-                    <div class="summary-value" id="sum-loads">0</div>
-                    <div class="summary-label">Total Loads</div>
+
+                <div class="card">
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-play" />
+                        </svg> Run Overlap Calculation</h2>
+                    <p class="helper-text">
+                        Run manually, or keep auto-update on for live recalculation while editing.
+                    </p>
+                    <div class="action-bar" style="margin-bottom:12px">
+                        <button class="btn btn-primary btn-lg" onclick="runCalculation()" id="calc-btn">
+                            <svg class="icon">
+                                <use href="#i-play" />
+                            </svg> Calculate Overlaps
+                        </button>
+                        <label class="inline-toggle" title="Re-run overlap calculation automatically when inputs change">
+                            <input type="checkbox" id="auto-run-toggle" checked>
+                            <span>Auto-update results while editing</span>
+                        </label>
+                    </div>
+                    <div id="validation-messages" class="validation-container" style="display:none"></div>
+                    <div id="results-stale-banner" class="guide-callout guide-callout-warning" style="display:none">
+                        Inputs changed after the last run. Re-run to refresh final output values.
+                    </div>
                 </div>
-                <div class="summary-card accent">
-                    <div class="summary-value" id="sum-affected">0</div>
-                    <div class="summary-label">Affected Members</div>
-                </div>
-                <div class="summary-card accent">
-                    <div class="summary-value" id="sum-rows">0</div>
-                    <div class="summary-label">Overlap Rows</div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title"><svg class="icon">
+                                <use href="#i-zap" />
+                            </svg> IRC Longitudinal Moving-Load Sweep</h2>
+                    </div>
+                    <p class="helper-text">
+                        Auto-reads current <strong>Loads tab</strong> for vehicle selection and <strong>Members + Project
+                            Settings</strong> for geometry inference, then reports critical longitudinal lead positions for
+                        top slab, bottom slab, side walls, and intermediate walls.
+                    </p>
+                    <p class="helper-text">
+                        Vehicle detection from Loads tab: <code>IRC_70R</code> (tracked by default, wheeled if ID/notes
+                        contain "wheeled"), <code>IRC_CLASS_A</code>, <code>IRC_CLASS_AA</code> (mapped as tracked heavy),
+                        explicit <code>SINGLE_AXLE_BOGIE</code> / <code>DOUBLE_AXLE_BOGIE</code> load types, and fallback
+                        bogie keywords in ID/notes ("single bogie", "double bogie", "max single axle", "max bogie").
+                    </p>
+                    <div class="guide-callout guide-callout-info" style="margin-top:8px">
+                        <strong>Required Fields for Auto-Calculation:</strong>
+                        <ul class="csv-columns" style="margin-top:6px">
+                            <li><strong>Project Settings tab:</strong> Structure Type = BOX_CULVERT_*, Total Width, Culvert Height, Top Slab Thickness, Bottom Slab Thickness, Wall Thickness</li>
+                            <li><strong>Members tab:</strong> member rows with groups tagged as TOP_SLAB, BOTTOM_SLAB, LEFT_WALL, RIGHT_WALL (and MIDDLE_WALL_* for multi-cell)</li>
+                            <li><strong>Loads tab:</strong> load rows with recognized vehicle tags in load_type (IRC_70R, IRC_CLASS_A, IRC_CLASS_AA, SINGLE_AXLE_BOGIE, DOUBLE_AXLE_BOGIE) or bogie ID/notes keywords</li>
+                            <li><strong>This panel:</strong> Increment (m)</li>
+                        </ul>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="form-group"><label>Increment (m)</label><input type="number" id="ml-increment"
+                                value="0.1" step="0.1" min="0.1"></div>
+                    </div>
+
+                    <div style="margin-top:16px">
+                        <button class="btn btn-primary" id="ml-run-btn" onclick="runLongitudinalSweep()"><svg class="icon">
+                                <use href="#i-play" />
+                            </svg> Run Longitudinal Sweep</button>
+                    </div>
+
+                    <div id="ml-result" style="display:none; margin-top:16px">
+                        <div class="guide-callout guide-callout-info" id="ml-model-info"></div>
+                        <div id="ml-viz-panel" class="card" style="display:none; margin-top:12px">
+                            <h3 style="margin-bottom:8px">STAAD-Style Critical Position Diagram</h3>
+                            <p class="helper-text" style="margin-bottom:10px">
+                                Updates from deduced critical lead positions. Changing increment auto-refreshes this diagram
+                                when inputs are valid.
+                            </p>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label>Vehicle</label>
+                                    <select id="ml-viz-vehicle"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Member Group</label>
+                                    <select id="ml-viz-group"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Critical Effect</label>
+                                    <select id="ml-viz-effect">
+                                        <option value="max_sagging_moment">Max Sagging Moment</option>
+                                        <option value="max_hogging_moment">Max Hogging Moment</option>
+                                        <option value="max_shear_force">Max Shear Force</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <canvas id="ml-viz-canvas"
+                                style="width:100%; height:360px; margin-top:10px; border:1px solid var(--border); border-radius:10px"></canvas>
+                            <div class="field-hint" id="ml-viz-caption" style="margin-top:8px"></div>
+                        </div>
+                        <div id="ml-results-container"></div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Calculate Button -->
-            <div class="action-bar">
-                <button class="btn btn-primary btn-lg" onclick="runCalculation()" id="calc-btn">
-                    <svg class="icon">
-                        <use href="#i-play" />
-                    </svg> Calculate Overlaps
-                </button>
-            </div>
+            <div class="results-cluster">
+                <h3 class="results-cluster-title">Numerical Outputs</h3>
 
-            <!-- Validation Messages -->
-            <div id="validation-messages" class="validation-container" style="display:none"></div>
+                <div class="card">
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-chart" />
+                        </svg> Key Overlap Metrics</h2>
+                    <p class="helper-text">
+                        High-level metrics from the latest overlap run.
+                    </p>
+                    <div class="summary-cards" id="summary-cards">
+                        <div class="summary-card">
+                            <div class="summary-value" id="sum-members">0</div>
+                            <div class="summary-label">Total Members</div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="summary-value" id="sum-loads">0</div>
+                            <div class="summary-label">Total Loads</div>
+                        </div>
+                        <div class="summary-card accent">
+                            <div class="summary-value" id="sum-affected">0</div>
+                            <div class="summary-label">Affected Members</div>
+                        </div>
+                        <div class="summary-card accent">
+                            <div class="summary-value" id="sum-rows">0</div>
+                            <div class="summary-label">Overlap Rows</div>
+                        </div>
+                    </div>
+                </div>
 
-            <!-- Results Visualization -->
-            <div class="card" id="results-viz-card" style="display:none">
-                <h2 class="card-title">Overlap Visualization</h2>
-                <p class="helper-text">Loads shown above, member strips below. Dashed cyan areas = overlap zones where
-                    load acts on the member. Verify that load positions match your bridge cross-section layout.</p>
-                <div id="results-viz-container">
-                    <svg id="results-svg" width="100%" height="280"></svg>
+                <div class="card" id="industry-output-card" style="display:none">
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-table" />
+                        </svg> Industry Output Snapshot</h2>
+                    <p class="helper-text">
+                        Condensed case-wise and load-wise output for checking sheets and client-facing review.
+                    </p>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Case</th>
+                                    <th>Total Loaded Length (m)</th>
+                                    <th>Affected Members</th>
+                                    <th>Overlap Rows</th>
+                                    <th>Max |Intensity|</th>
+                                </tr>
+                            </thead>
+                            <tbody id="industry-case-tbody"></tbody>
+                        </table>
+                    </div>
+                    <div class="table-container" style="margin-top:12px">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Load ID</th>
+                                    <th>Case</th>
+                                    <th>Total Loaded Length (m)</th>
+                                    <th>Affected Members</th>
+                                    <th>Max |Intensity|</th>
+                                </tr>
+                            </thead>
+                            <tbody id="industry-load-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card" id="results-card" style="display:none">
+                    <h2 class="card-title">Overlap Calculations (Detailed Table)</h2>
+                    <p class="helper-text">Each row = one (load, member) pair where an overlap exists. <strong>d1 and d2 are
+                            the exact values</strong> you enter in STAAD.Pro's <code>MEMBER LOAD</code> command. Verify: d2
+                        > d1, loaded length > 0, and intensity sign is correct.</p>
+                    <div class="table-container">
+                        <table id="results-table">
+                            <thead>
+                                <tr>
+                                    <th title="Load identifier">Load</th>
+                                    <th title="Load case group">Case</th>
+                                    <th title="STAAD member number">Member</th>
+                                    <th title="Global position where overlap starts">Overlap Start</th>
+                                    <th title="Global position where overlap ends">Overlap End</th>
+                                    <th title="STAAD d1: distance from member start to load start on this member">d1 (Front)
+                                    </th>
+                                    <th title="STAAD d2: distance from member start to load end on this member">d2 (Back)
+                                    </th>
+                                    <th title="d2 − d1 = loaded portion on this member">Length</th>
+                                    <th title="Load intensity at overlap start (kN/m)">Intensity</th>
+                                    <th title="STAAD global/local direction">Dir</th>
+                                    <th title="UNI = uniform, LIN = trapezoidal">Format</th>
+                                </tr>
+                            </thead>
+                            <tbody id="results-tbody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
-            <!-- STAAD.Pro-Style Frame Visualization -->
-            <div class="card" id="results-frame-card" style="display:none">
-                <h2 class="card-title"><svg class="icon">
-                        <use href="#i-microscope" />
-                    </svg> STAAD.Pro Frame Visualization</h2>
-                <p class="helper-text">Visual representation of your load-member model as it would appear in STAAD.Pro.
-                    Shows load patches, member strips, overlap zones, d1/d2 distances, and intensities from your actual
-                    calculation data.</p>
-                <canvas id="results-frame-canvas"
-                    style="width:100%; height:440px; border-radius:12px; border:1px solid var(--border)"></canvas>
-            </div>
+            <div class="results-cluster">
+                <h3 class="results-cluster-title">Visual Validation</h3>
 
-            <!-- Results Table -->
-            <div class="card" id="results-card" style="display:none">
-                <h2 class="card-title">Overlap Calculations</h2>
-                <p class="helper-text">Each row = one (load, member) pair where an overlap exists. <strong>d1 and d2 are
-                        the exact values</strong> you enter in STAAD.Pro's <code>MEMBER LOAD</code> command. Verify: d2
-                    > d1, loaded length > 0, and intensity sign is correct.</p>
-                <div class="table-container">
-                    <table id="results-table">
-                        <thead>
-                            <tr>
-                                <th title="Load identifier">Load</th>
-                                <th title="Load case group">Case</th>
-                                <th title="STAAD member number">Member</th>
-                                <th title="Global position where overlap starts">Overlap Start</th>
-                                <th title="Global position where overlap ends">Overlap End</th>
-                                <th title="STAAD d1: distance from member start to load start on this member">d1 (Front)
-                                </th>
-                                <th title="STAAD d2: distance from member start to load end on this member">d2 (Back)
-                                </th>
-                                <th title="d2 − d1 = loaded portion on this member">Length</th>
-                                <th title="Load intensity at overlap start (kN/m)">Intensity</th>
-                                <th title="STAAD global/local direction">Dir</th>
-                                <th title="UNI = uniform, LIN = trapezoidal">Format</th>
-                            </tr>
-                        </thead>
-                        <tbody id="results-tbody"></tbody>
-                    </table>
+                <div class="card" id="results-viz-card" style="display:none">
+                    <h2 class="card-title">Overlap Visualization</h2>
+                    <p class="helper-text">Loads shown above, member strips below. Dashed cyan areas = overlap zones where
+                        load acts on the member. Verify that load positions match your bridge cross-section layout.</p>
+                    <div id="results-viz-container">
+                        <svg id="results-svg" width="100%" height="280"></svg>
+                    </div>
+                </div>
+
+                <div class="card" id="results-frame-card" style="display:none">
+                    <h2 class="card-title"><svg class="icon">
+                            <use href="#i-microscope" />
+                        </svg> STAAD.Pro Frame Visualization</h2>
+                    <p class="helper-text">Visual representation of your load-member model as it would appear in STAAD.Pro.
+                        Shows load patches, member strips, overlap zones, d1/d2 distances, and intensities from your actual
+                        calculation data.</p>
+                    <canvas id="results-frame-canvas"
+                        style="width:100%; height:440px; border-radius:12px; border:1px solid var(--border)"></canvas>
                 </div>
             </div>
         </section>

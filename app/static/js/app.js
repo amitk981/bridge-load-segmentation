@@ -11,6 +11,13 @@ let memberMode = 'auto';
 let currentOverlaps = [];
 let currentSummary = null;
 let currentSTAAD = '';
+let currentSweepResult = null;
+let resultsDirty = false;
+let liveCalcTimer = null;
+let isAutoCalculating = false;
+let appMessageTimer = null;
+let liveSweepTimer = null;
+let isAutoSweeping = false;
 
 // ─── Tab Switching ──────────────────────────────────────────────────────────
 
@@ -19,9 +26,17 @@ function switchTab(tabId) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById(`tab-${tabId}`).classList.add('active');
     document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
+    clearAppMessages();
 
     if (tabId === 'geometry') updateVisualization();
-    if (tabId === 'results' && currentOverlaps.length) updateResultsVisualization();
+    if (tabId === 'results') {
+        updateRunReadinessPanel();
+        updateResultsVisualization();
+        if (currentOverlaps.length && !resultsDirty) setTimeout(() => renderResultsFrameViz(), 50);
+        if (currentSweepResult && typeof renderLongitudinalSweepViz === 'function') {
+            setTimeout(() => renderLongitudinalSweepViz(), 60);
+        }
+    }
 }
 
 // ─── Member Mode ────────────────────────────────────────────────────────────
@@ -47,10 +62,20 @@ function generateAutoMembers() {
     if (widthMode === 'custom') {
         // Custom widths mode
         const raw = document.getElementById('custom-widths').value.trim();
-        if (!raw) { alert('Please enter custom widths (comma-separated).'); return; }
+        if (!raw) {
+            notifyUser('Please enter custom widths (comma-separated).', 'warning', {
+                hint: 'Provide strip widths that add up to Total Width.',
+            });
+            return;
+        }
 
         const widths = raw.split(/[\s,]+/).map(v => parseFloat(v.trim())).filter(v => !isNaN(v) && v > 0);
-        if (widths.length === 0) { alert('Invalid widths. Enter numbers separated by commas.'); return; }
+        if (widths.length === 0) {
+            notifyUser('Invalid widths. Enter numbers separated by commas.', 'warning', {
+                hint: 'Use positive numeric values like 0.8,1.2,1.5.',
+            });
+            return;
+        }
 
         const sum = widths.reduce((a, b) => a + b, 0);
         const tolerance = 0.01;
@@ -85,7 +110,7 @@ function generateAutoMembers() {
         }
     }
 
-    updateVisualization();
+    onDataChanged('members');
 }
 
 function toggleWidthMode() {
@@ -96,7 +121,10 @@ function toggleWidthMode() {
     // Live feedback for custom widths
     if (mode === 'custom') {
         const input = document.getElementById('custom-widths');
-        input.addEventListener('input', updateCustomWidthsFeedback);
+        if (!input.dataset.feedbackBound) {
+            input.addEventListener('input', updateCustomWidthsFeedback);
+            input.dataset.feedbackBound = '1';
+        }
         updateCustomWidthsFeedback();
     }
 }
@@ -129,6 +157,7 @@ function addMemberRow() {
     const rows = tbody.rows.length;
     const lastId = rows > 0 ? parseInt(tbody.rows[rows - 1].cells[0].querySelector('input').value) + 1 : 1001;
     addMemberRowWithData(lastId, '', '', '', 'GENERAL', '');
+    onDataChanged('members');
 }
 
 function addMemberRowWithData(id, start, end, width, group, label) {
@@ -147,26 +176,18 @@ function addMemberRowWithData(id, start, end, width, group, label) {
             <option value="LEFT_WALL" ${group === 'LEFT_WALL' ? 'selected' : ''}>Left Wall</option>
             <option value="RIGHT_WALL" ${group === 'RIGHT_WALL' ? 'selected' : ''}>Right Wall</option>
             <option value="MIDDLE_WALL_1" ${group === 'MIDDLE_WALL_1' ? 'selected' : ''}>Middle Wall 1</option>
+            <option value="MIDDLE_WALL_2" ${group === 'MIDDLE_WALL_2' ? 'selected' : ''}>Middle Wall 2</option>
+            <option value="MIDDLE_WALL_3" ${group === 'MIDDLE_WALL_3' ? 'selected' : ''}>Middle Wall 3</option>
         </select></td>
         <td><input type="text" value="${label}" class="m-label"></td>
-        <td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove(); updateVisualization();">✕</button></td>
+        <td><button class="btn btn-xs btn-danger" onclick="removeMemberRow(this)">✕</button></td>
     `;
 }
 
 function collectMembers() {
-    const rows = document.getElementById('member-tbody').rows;
-    const members = [];
-    for (const row of rows) {
-        const id = parseInt(row.querySelector('.m-id').value);
-        const start = parseFloat(row.querySelector('.m-start').value);
-        const end = parseFloat(row.querySelector('.m-end').value);
-        const group = row.querySelector('.m-group').value;
-        const label = row.querySelector('.m-label').value;
-        if (!isNaN(id) && !isNaN(start) && !isNaN(end)) {
-            members.push({ id, start, end, group, label });
-        }
-    }
-    return members;
+    return collectMemberRowsDetailed()
+        .filter(r => r.valid)
+        .map(r => r.member);
 }
 
 // ─── Load Table ─────────────────────────────────────────────────────────────
@@ -176,14 +197,20 @@ function addLoadRow() {
     const rows = tbody.rows.length;
     const loadId = `L${rows + 1}`;
     addLoadRowWithData(loadId, 'LC1', 'PARTIAL_UDL', '', '', '', '', 'GY', '');
+    onDataChanged('loads');
 }
 
 function addLoadRowWithData(id, lcase, type, start, end, intensity, intensityEnd, dir, notes) {
     const tbody = document.getElementById('load-tbody');
     const row = tbody.insertRow();
 
-    const loadTypes = ['PARTIAL_UDL', 'PATCH_LOAD', 'IRC_CLASS_AA', 'IRC_70R', 'IRC_CLASS_A',
-        'EARTH_PRESSURE', 'SURCHARGE', 'HYDROSTATIC', 'DEAD_LOAD', 'WEARING_COURSE', 'BRAKING', 'CUSTOM'];
+    const loadTypes = [
+        'PARTIAL_UDL', 'PATCH_LOAD',
+        'IRC_CLASS_AA', 'IRC_70R', 'IRC_CLASS_A',
+        'SINGLE_AXLE_BOGIE', 'DOUBLE_AXLE_BOGIE',
+        'EARTH_PRESSURE', 'SURCHARGE', 'HYDROSTATIC',
+        'DEAD_LOAD', 'WEARING_COURSE', 'BRAKING', 'CUSTOM',
+    ];
     const typeOptions = loadTypes.map(t =>
         `<option value="${t}" ${t === type ? 'selected' : ''}>${t.replace(/_/g, ' ')}</option>`
     ).join('');
@@ -203,7 +230,7 @@ function addLoadRowWithData(id, lcase, type, start, end, intensity, intensityEnd
         <td><input type="number" value="${intensityEnd}" step="0.01" class="l-intensity-end" placeholder="—"></td>
         <td><select class="l-dir">${dirOptions}</select></td>
         <td><input type="text" value="${notes}" class="l-notes" style="width:120px"></td>
-        <td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>
+        <td><button class="btn btn-xs btn-danger" onclick="removeLoadRow(this)">✕</button></td>
     `;
 }
 
@@ -223,29 +250,13 @@ function duplicateLastLoad() {
         last.querySelector('.l-dir').value,
         last.querySelector('.l-notes').value,
     );
+    onDataChanged('loads');
 }
 
 function collectLoads() {
-    const rows = document.getElementById('load-tbody').rows;
-    const loads = [];
-    for (const row of rows) {
-        const start = parseFloat(row.querySelector('.l-start').value);
-        const end = parseFloat(row.querySelector('.l-end').value);
-        const intensity = parseFloat(row.querySelector('.l-intensity').value);
-        if (!isNaN(start) && !isNaN(end) && !isNaN(intensity)) {
-            const ie = parseFloat(row.querySelector('.l-intensity-end').value);
-            loads.push({
-                id: row.querySelector('.l-id').value,
-                load_case: row.querySelector('.l-case').value,
-                load_type: row.querySelector('.l-type').value,
-                start, end, intensity,
-                intensity_end: isNaN(ie) ? null : ie,
-                direction: row.querySelector('.l-dir').value,
-                notes: row.querySelector('.l-notes').value,
-            });
-        }
-    }
-    return loads;
+    return collectLoadRowsDetailed()
+        .filter(r => r.valid)
+        .map(r => r.load);
 }
 
 // ─── Settings Collection ────────────────────────────────────────────────────
@@ -258,12 +269,15 @@ function collectSettings() {
         project_date: document.getElementById('project-date').value,
         comments: document.getElementById('comments').value,
         structure_type: document.getElementById('structure-type').value,
-        total_width: parseFloat(document.getElementById('total-width').value) || 8.5,
+        total_width: parseFloat(document.getElementById('total-width').value),
         reference_axis: document.getElementById('reference-axis').value,
         custom_datum: parseFloat(document.getElementById('custom-datum').value) || 0,
-        culvert_height: parseFloat(document.getElementById('culvert-height').value) || 0,
+        culvert_height: parseFloat(document.getElementById('culvert-height').value),
         fill_depth: parseFloat(document.getElementById('fill-depth').value) || 0,
-        decimal_precision: parseInt(document.getElementById('decimal-precision').value) || 2,
+        slab_thickness: parseFloat(document.getElementById('slab-thickness').value),
+        bottom_slab_thickness: parseFloat(document.getElementById('bottom-slab-thickness').value),
+        wall_thickness: parseFloat(document.getElementById('wall-thickness').value),
+        decimal_precision: parseInt(document.getElementById('decimal-precision').value, 10),
         units: document.getElementById('units').value,
         overhang_policy: document.getElementById('overhang-policy').value,
         start_member_number: parseInt(document.getElementById('start-member').value) || 1001,
@@ -271,15 +285,514 @@ function collectSettings() {
     };
 }
 
+function removeMemberRow(btn) {
+    btn.closest('tr').remove();
+    onDataChanged('members');
+}
+
+function removeLoadRow(btn) {
+    btn.closest('tr').remove();
+    onDataChanged('loads');
+}
+
+function updateMemberWidthCell(row) {
+    if (!row) return;
+    const start = parseFloat(row.querySelector('.m-start')?.value);
+    const end = parseFloat(row.querySelector('.m-end')?.value);
+    const widthEl = row.querySelector('.m-width');
+    if (!widthEl) return;
+    if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+        widthEl.textContent = (end - start).toFixed(4);
+    } else {
+        widthEl.textContent = '';
+    }
+}
+
+function updateAllMemberWidths() {
+    const rows = document.querySelectorAll('#member-tbody tr');
+    rows.forEach(updateMemberWidthCell);
+}
+
+function collectMemberRowsDetailed() {
+    const rows = Array.from(document.querySelectorAll('#member-tbody tr'));
+    return rows.map((row, idx) => {
+        const errors = [];
+        const rowNo = idx + 1;
+        const idEl = row.querySelector('.m-id');
+        const startEl = row.querySelector('.m-start');
+        const endEl = row.querySelector('.m-end');
+        const groupEl = row.querySelector('.m-group');
+        const labelEl = row.querySelector('.m-label');
+
+        const idRaw = String(idEl?.value || '').trim();
+        const startRaw = String(startEl?.value || '').trim();
+        const endRaw = String(endEl?.value || '').trim();
+
+        const id = Number.parseInt(idRaw, 10);
+        const start = Number.parseFloat(startRaw);
+        const end = Number.parseFloat(endRaw);
+        const group = String(groupEl?.value || 'GENERAL').trim().toUpperCase();
+        const label = String(labelEl?.value || '');
+
+        if (!idRaw) errors.push({ message: `Members row ${rowNo}: Member ID is required.`, element: idEl });
+        else if (!Number.isInteger(id)) errors.push({ message: `Members row ${rowNo}: Member ID must be an integer.`, element: idEl });
+
+        if (!startRaw) errors.push({ message: `Members row ${rowNo}: Start is required.`, element: startEl });
+        else if (!Number.isFinite(start)) errors.push({ message: `Members row ${rowNo}: Start must be a number.`, element: startEl });
+
+        if (!endRaw) errors.push({ message: `Members row ${rowNo}: End is required.`, element: endEl });
+        else if (!Number.isFinite(end)) errors.push({ message: `Members row ${rowNo}: End must be a number.`, element: endEl });
+
+        if (Number.isFinite(start) && Number.isFinite(end) && end <= start) {
+            errors.push({ message: `Members row ${rowNo}: End must be greater than Start.`, element: endEl });
+        }
+
+        updateMemberWidthCell(row);
+
+        return {
+            row,
+            index: rowNo,
+            valid: errors.length === 0,
+            errors,
+            member: {
+                id,
+                start,
+                end,
+                group,
+                label,
+            },
+        };
+    });
+}
+
+function collectLoadRowsDetailed() {
+    const rows = Array.from(document.querySelectorAll('#load-tbody tr'));
+    return rows.map((row, idx) => {
+        const errors = [];
+        const rowNo = idx + 1;
+        const idEl = row.querySelector('.l-id');
+        const caseEl = row.querySelector('.l-case');
+        const typeEl = row.querySelector('.l-type');
+        const startEl = row.querySelector('.l-start');
+        const endEl = row.querySelector('.l-end');
+        const intensityEl = row.querySelector('.l-intensity');
+        const intensityEndEl = row.querySelector('.l-intensity-end');
+        const dirEl = row.querySelector('.l-dir');
+        const notesEl = row.querySelector('.l-notes');
+
+        const idRaw = String(idEl?.value || '').trim();
+        const caseRaw = String(caseEl?.value || '').trim();
+        const startRaw = String(startEl?.value || '').trim();
+        const endRaw = String(endEl?.value || '').trim();
+        const intensityRaw = String(intensityEl?.value || '').trim();
+        const intensityEndRaw = String(intensityEndEl?.value || '').trim();
+
+        const start = Number.parseFloat(startRaw);
+        const end = Number.parseFloat(endRaw);
+        const intensity = Number.parseFloat(intensityRaw);
+        const intensityEnd = intensityEndRaw === '' ? null : Number.parseFloat(intensityEndRaw);
+
+        if (!idRaw) errors.push({ message: `Loads row ${rowNo}: Load ID is required.`, element: idEl });
+        if (!caseRaw) errors.push({ message: `Loads row ${rowNo}: Case is required.`, element: caseEl });
+
+        if (!startRaw) errors.push({ message: `Loads row ${rowNo}: Start is required.`, element: startEl });
+        else if (!Number.isFinite(start)) errors.push({ message: `Loads row ${rowNo}: Start must be a number.`, element: startEl });
+
+        if (!endRaw) errors.push({ message: `Loads row ${rowNo}: End is required.`, element: endEl });
+        else if (!Number.isFinite(end)) errors.push({ message: `Loads row ${rowNo}: End must be a number.`, element: endEl });
+
+        if (Number.isFinite(start) && Number.isFinite(end) && end <= start) {
+            errors.push({ message: `Loads row ${rowNo}: End must be greater than Start.`, element: endEl });
+        }
+
+        if (!intensityRaw) errors.push({ message: `Loads row ${rowNo}: Intensity is required.`, element: intensityEl });
+        else if (!Number.isFinite(intensity)) errors.push({ message: `Loads row ${rowNo}: Intensity must be a number.`, element: intensityEl });
+
+        if (intensityEndRaw !== '' && !Number.isFinite(intensityEnd)) {
+            errors.push({ message: `Loads row ${rowNo}: Int. End must be a number when provided.`, element: intensityEndEl });
+        }
+
+        return {
+            row,
+            index: rowNo,
+            valid: errors.length === 0,
+            errors,
+            load: {
+                id: idRaw || `L${rowNo}`,
+                load_case: caseRaw || 'LC1',
+                load_type: String(typeEl?.value || 'PARTIAL_UDL'),
+                start,
+                end,
+                intensity,
+                intensity_end: intensityEnd,
+                direction: String(dirEl?.value || 'GY'),
+                notes: String(notesEl?.value || ''),
+            },
+        };
+    });
+}
+
+function collectMembersForProjectFile() {
+    return Array.from(document.querySelectorAll('#member-tbody tr')).map(row => ({
+        id: row.querySelector('.m-id')?.value ?? '',
+        start: row.querySelector('.m-start')?.value ?? '',
+        end: row.querySelector('.m-end')?.value ?? '',
+        group: row.querySelector('.m-group')?.value ?? 'GENERAL',
+        label: row.querySelector('.m-label')?.value ?? '',
+    }));
+}
+
+function collectLoadsForProjectFile() {
+    return Array.from(document.querySelectorAll('#load-tbody tr')).map(row => ({
+        id: row.querySelector('.l-id')?.value ?? '',
+        load_case: row.querySelector('.l-case')?.value ?? '',
+        load_type: row.querySelector('.l-type')?.value ?? 'PARTIAL_UDL',
+        start: row.querySelector('.l-start')?.value ?? '',
+        end: row.querySelector('.l-end')?.value ?? '',
+        intensity: row.querySelector('.l-intensity')?.value ?? '',
+        intensity_end: row.querySelector('.l-intensity-end')?.value ?? '',
+        direction: row.querySelector('.l-dir')?.value ?? 'GY',
+        notes: row.querySelector('.l-notes')?.value ?? '',
+    }));
+}
+
+function clearInputHighlights() {
+    document.querySelectorAll('.input-error').forEach(el => el.classList.remove('input-error'));
+}
+
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function clearAppMessages() {
+    const container = document.getElementById('app-messages');
+    if (!container) return;
+    container.innerHTML = '';
+    container.style.display = 'none';
+}
+
+function notifyUser(message, level = 'error', options = {}) {
+    const targetId = options.targetId || 'app-messages';
+    const container = document.getElementById(targetId);
+    if (!container) return;
+
+    const icons = { error: '❌', warning: '⚠️', info: 'ℹ️', success: '✅' };
+    const icon = icons[level] || icons.error;
+    const lines = String(message || '').split('\n').filter(v => v.trim() !== '');
+    const title = lines[0] || 'Message';
+    const details = lines.slice(1);
+    const hint = options.hint ? String(options.hint) : '';
+
+    const detailsHtml = details.length
+        ? `<div class="validation-detail">${details.map(line => escapeHtml(line)).join('<br>')}</div>`
+        : '';
+    const hintHtml = hint
+        ? `<div class="validation-detail"><strong>Action:</strong> ${escapeHtml(hint)}</div>`
+        : '';
+
+    const html = `
+        <div class="validation-msg ${level}">
+            <span>${icon}</span>
+            <div>
+                <div>${escapeHtml(title)}</div>
+                ${detailsHtml}
+                ${hintHtml}
+            </div>
+        </div>
+    `;
+
+    if (options.append) {
+        container.insertAdjacentHTML('beforeend', html);
+    } else {
+        container.innerHTML = html;
+    }
+    container.style.display = 'block';
+
+    const autoHideMs = options.sticky ? 0 : Number(options.autoHideMs ?? 9000);
+    if (targetId === 'app-messages' && autoHideMs > 0) {
+        if (appMessageTimer) clearTimeout(appMessageTimer);
+        appMessageTimer = setTimeout(() => clearAppMessages(), autoHideMs);
+    }
+}
+
+function renderValidationMessages(items) {
+    const valContainer = document.getElementById('validation-messages');
+    if (!valContainer) return;
+
+    if (!Array.isArray(items) || !items.length) {
+        valContainer.innerHTML = '';
+        valContainer.style.display = 'none';
+        return;
+    }
+
+    valContainer.innerHTML = items.map(m => {
+        const level = m.level || 'warning';
+        const icon = level === 'error' ? '❌' : '⚠️';
+        return `<div class="validation-msg ${level}"><span>${icon}</span> ${m.message}</div>`;
+    }).join('');
+    valContainer.style.display = 'block';
+}
+
+function evaluateDataFlow(highlight = true) {
+    const settings = collectSettings();
+    const memberRows = collectMemberRowsDetailed();
+    const loadRows = collectLoadRowsDetailed();
+    const members = memberRows.filter(r => r.valid).map(r => r.member);
+    const loads = loadRows.filter(r => r.valid).map(r => r.load);
+
+    const errors = [];
+    const warnings = [];
+
+    if (highlight) clearInputHighlights();
+
+    const addError = (message, element = null) => {
+        errors.push({ level: 'error', message });
+        if (highlight && element) element.classList.add('input-error');
+    };
+
+    const addWarning = (message) => {
+        warnings.push({ level: 'warning', message });
+    };
+
+    if (!(settings.total_width > 0)) {
+        addError('Project Settings: Total Width must be greater than 0.', document.getElementById('total-width'));
+    }
+    if (!Number.isFinite(settings.culvert_height)) {
+        addError('Project Settings: Culvert Height must be a number.', document.getElementById('culvert-height'));
+    }
+    if (!Number.isFinite(settings.fill_depth)) {
+        addError('Project Settings: Fill Depth must be a number.', document.getElementById('fill-depth'));
+    }
+    if (!Number.isFinite(settings.slab_thickness)) {
+        addError('Project Settings: Top Slab Thickness must be a number.', document.getElementById('slab-thickness'));
+    }
+    if (!Number.isFinite(settings.bottom_slab_thickness)) {
+        addError('Project Settings: Bottom Slab Thickness must be a number.', document.getElementById('bottom-slab-thickness'));
+    }
+    if (!Number.isFinite(settings.wall_thickness)) {
+        addError('Project Settings: Wall Thickness must be a number.', document.getElementById('wall-thickness'));
+    }
+    if (!Number.isInteger(settings.decimal_precision) || settings.decimal_precision < 0 || settings.decimal_precision > 6) {
+        addError('Project Settings: Decimal Precision must be an integer between 0 and 6.', document.getElementById('decimal-precision'));
+    }
+    if (settings.reference_axis === 'CUSTOM' && !Number.isFinite(settings.custom_datum)) {
+        addError('Project Settings: Custom Datum must be a number when reference axis is CUSTOM.', document.getElementById('custom-datum'));
+    }
+
+    memberRows.forEach(r => r.errors.forEach(e => addError(e.message, e.element)));
+    loadRows.forEach(r => r.errors.forEach(e => addError(e.message, e.element)));
+
+    if (memberRows.length === 0) addError('Members tab: add at least one member row.');
+    if (loadRows.length === 0) addError('Loads tab: add at least one load row.');
+
+    for (const lo of loads) {
+        if (lo.start < 0 || lo.end > settings.total_width) {
+            addWarning(`Load ${lo.id} extends beyond total width (${settings.total_width}m). Check overhang policy.`);
+        }
+    }
+
+    const sweepErrors = validateLongitudinalSweepInputs(settings, members, loads);
+    return {
+        settings,
+        memberRows,
+        loadRows,
+        members,
+        loads,
+        errors,
+        warnings,
+        sweepErrors,
+        overlapReady: errors.length === 0,
+        sweepReady: errors.length === 0 && sweepErrors.length === 0,
+    };
+}
+
+function updateRunReadinessPanel() {
+    const flow = evaluateDataFlow(true);
+
+    const overlapEl = document.getElementById('flow-ready-overlap');
+    const sweepEl = document.getElementById('flow-ready-sweep');
+    const membersEl = document.getElementById('flow-members-valid');
+    const loadsEl = document.getElementById('flow-loads-valid');
+    const blockersEl = document.getElementById('flow-blockers');
+
+    if (overlapEl) {
+        overlapEl.textContent = flow.overlapReady ? 'Ready' : 'Blocked';
+        overlapEl.className = `flow-status ${flow.overlapReady ? 'ok' : 'bad'}`;
+    }
+    if (sweepEl) {
+        sweepEl.textContent = flow.sweepReady ? 'Ready' : 'Blocked';
+        sweepEl.className = `flow-status ${flow.sweepReady ? 'ok' : 'bad'}`;
+    }
+    if (membersEl) membersEl.textContent = `${flow.members.length}/${flow.memberRows.length}`;
+    if (loadsEl) loadsEl.textContent = `${flow.loads.length}/${flow.loadRows.length}`;
+
+    if (blockersEl) {
+        const items = [
+            ...flow.errors.map(e => `• ${e.message}`),
+            ...flow.sweepErrors.map(e => `• ${e}`),
+        ];
+        const uniqueItems = Array.from(new Set(items));
+        if (uniqueItems.length) {
+            blockersEl.innerHTML = `<div class="flow-blockers">${uniqueItems.join('<br>')}</div>`;
+        } else {
+            blockersEl.innerHTML = '<div class="flow-ok">All required fields are valid. Ready to run.</div>';
+        }
+    }
+
+    return flow;
+}
+
+function setResultsStale(stale) {
+    resultsDirty = stale;
+    const banner = document.getElementById('results-stale-banner');
+    if (!banner) return;
+    banner.style.display = stale ? 'block' : 'none';
+}
+
+function scheduleLiveCalculation() {
+    const autoRun = document.getElementById('auto-run-toggle');
+    if (!autoRun || !autoRun.checked || isAutoCalculating) return;
+    if (liveCalcTimer) clearTimeout(liveCalcTimer);
+    liveCalcTimer = setTimeout(() => runCalculation({ auto: true }), 500);
+}
+
+function scheduleLiveSweep() {
+    const mlResult = document.getElementById('ml-result');
+    if (!mlResult || mlResult.style.display === 'none') return;
+    if (isAutoSweeping) return;
+    const btn = document.getElementById('ml-run-btn');
+    if (btn && btn.disabled) return;
+
+    const flow = evaluateDataFlow(false);
+    if (!flow.sweepReady) return;
+
+    if (liveSweepTimer) clearTimeout(liveSweepTimer);
+    liveSweepTimer = setTimeout(() => runLongitudinalSweep({ auto: true }), 550);
+}
+
+function onDataChanged(source) {
+    if (source === 'members' || source === 'settings') {
+        updateAllMemberWidths();
+        if (typeof updateVisualization === 'function') updateVisualization();
+    }
+
+    if (typeof updateResultsVisualization === 'function') updateResultsVisualization();
+    updateRunReadinessPanel();
+
+    if (currentOverlaps.length) {
+        setResultsStale(true);
+    }
+
+    scheduleLiveCalculation();
+    scheduleLiveSweep();
+}
+
+function renderIndustryOutputSummary(summary, overlaps) {
+    const card = document.getElementById('industry-output-card');
+    const caseBody = document.getElementById('industry-case-tbody');
+    const loadBody = document.getElementById('industry-load-tbody');
+    if (!card || !caseBody || !loadBody) return;
+
+    if (!summary || !Array.isArray(overlaps) || !overlaps.length) {
+        card.style.display = 'none';
+        return;
+    }
+
+    const caseStats = {};
+    const loadStats = {};
+
+    overlaps.forEach(r => {
+        if (!(r.loaded_length > 0)) return;
+
+        if (!caseStats[r.load_case]) {
+            caseStats[r.load_case] = {
+                loaded: 0,
+                members: new Set(),
+                rows: 0,
+                maxAbsIntensity: 0,
+            };
+        }
+        caseStats[r.load_case].loaded += Number(r.loaded_length) || 0;
+        caseStats[r.load_case].members.add(r.member_id);
+        caseStats[r.load_case].rows += 1;
+        caseStats[r.load_case].maxAbsIntensity = Math.max(
+            caseStats[r.load_case].maxAbsIntensity,
+            Math.abs(Number(r.intensity) || 0),
+            Math.abs(Number(r.intensity_end) || 0),
+        );
+
+        if (!loadStats[r.load_id]) {
+            loadStats[r.load_id] = {
+                caseId: r.load_case,
+                loaded: 0,
+                members: new Set(),
+                rows: 0,
+                maxAbsIntensity: 0,
+            };
+        }
+        loadStats[r.load_id].loaded += Number(r.loaded_length) || 0;
+        loadStats[r.load_id].members.add(r.member_id);
+        loadStats[r.load_id].rows += 1;
+        loadStats[r.load_id].maxAbsIntensity = Math.max(
+            loadStats[r.load_id].maxAbsIntensity,
+            Math.abs(Number(r.intensity) || 0),
+            Math.abs(Number(r.intensity_end) || 0),
+        );
+    });
+
+    const caseRows = Object.entries(caseStats).sort((a, b) => a[0].localeCompare(b[0]));
+    const loadRows = Object.entries(loadStats).sort((a, b) => a[0].localeCompare(b[0]));
+
+    caseBody.innerHTML = caseRows.map(([caseId, s]) => `
+        <tr>
+            <td>${caseId}</td>
+            <td>${s.loaded.toFixed(3)}</td>
+            <td>${s.members.size}</td>
+            <td>${s.rows}</td>
+            <td>${s.maxAbsIntensity.toFixed(3)}</td>
+        </tr>
+    `).join('');
+
+    loadBody.innerHTML = loadRows.map(([loadId, s]) => `
+        <tr>
+            <td>${loadId}</td>
+            <td>${s.caseId}</td>
+            <td>${s.loaded.toFixed(3)}</td>
+            <td>${s.members.size}</td>
+            <td>${s.maxAbsIntensity.toFixed(3)}</td>
+        </tr>
+    `).join('');
+
+    card.style.display = 'block';
+}
+
 // ─── API Calls ──────────────────────────────────────────────────────────────
 
-async function runCalculation() {
+async function runCalculation(options = {}) {
+    const auto = !!options.auto;
     const btn = document.getElementById('calc-btn');
-    btn.innerHTML = '<svg class="icon"><use href="#i-play"/></svg> Calculating...';
-    btn.disabled = true;
+    const originalBtn = btn.innerHTML;
+    if (!auto) {
+        btn.innerHTML = '<svg class="icon"><use href="#i-play"/></svg> Calculating...';
+        btn.disabled = true;
+    } else {
+        isAutoCalculating = true;
+    }
 
     try {
-        const body = { settings: collectSettings(), members: collectMembers(), loads: collectLoads() };
+        const flow = updateRunReadinessPanel();
+        if (!flow.overlapReady) {
+            const localMessages = [...flow.errors, ...flow.warnings];
+            renderValidationMessages(localMessages);
+            return;
+        }
+
+        const body = { settings: flow.settings, members: flow.members, loads: flow.loads };
         const resp = await fetch('/api/calculate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -287,63 +800,602 @@ async function runCalculation() {
         });
         const data = await resp.json();
 
-        // Validation messages
-        const valContainer = document.getElementById('validation-messages');
-        if (data.validation && data.validation.length) {
-            valContainer.innerHTML = data.validation.map(m =>
-                `<div class="validation-msg ${m.level}"><span>${m.level === 'error' ? '❌' : '⚠️'}</span> ${m.message}</div>`
-            ).join('');
-            valContainer.style.display = 'block';
-        } else {
-            valContainer.style.display = 'none';
+        const serverMessages = [];
+        if (Array.isArray(data.validation)) {
+            serverMessages.push(...data.validation.map(m => ({
+                level: m.level || 'warning',
+                message: m.message || 'Validation message',
+            })));
+        }
+        if (Array.isArray(data.details)) {
+            serverMessages.push(...data.details.map(msg => ({ level: 'error', message: msg })));
         }
 
-        if (data.success) {
-            currentOverlaps = data.overlaps;
-            currentSummary = data.summary;
-            currentSTAAD = data.staad_text;
-
-            // Update summary cards
-            document.getElementById('sum-members').textContent = data.summary.total_members;
-            document.getElementById('sum-loads').textContent = data.summary.total_loads;
-            document.getElementById('sum-affected').textContent = data.summary.affected_members;
-            document.getElementById('sum-rows').textContent = data.summary.total_overlap_rows;
-
-            // Populate results table
-            const tbody = document.getElementById('results-tbody');
-            tbody.innerHTML = '';
-            for (const r of data.overlaps) {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${r.load_id}</td><td>${r.load_case}</td><td>${r.member_id}</td>
-                    <td>${r.overlap_start_global}</td><td>${r.overlap_end_global}</td>
-                    <td>${r.front_distance}</td><td>${r.back_distance}</td>
-                    <td>${r.loaded_length}</td><td>${r.intensity}</td>
-                    <td>${r.direction}</td><td>${r.staad_format}</td>
-                `;
-                tbody.appendChild(tr);
+        if (!resp.ok || !data.success) {
+            if (serverMessages.length) {
+                renderValidationMessages(serverMessages);
+            } else if (!auto) {
+                notifyUser('Calculation error: ' + (data.error || 'Unknown error'), 'error', {
+                    targetId: 'validation-messages',
+                    sticky: true,
+                    hint: 'Fix listed blockers, then run Calculate Overlaps again.',
+                });
             }
-
-            document.getElementById('results-card').style.display = 'block';
-            document.getElementById('results-viz-card').style.display = 'block';
-            document.getElementById('results-frame-card').style.display = 'block';
-            document.getElementById('staad-preview').textContent = data.staad_text;
-
-            updateResultsVisualization();
-            // Render STAAD.Pro-style frame visualization
-            setTimeout(() => renderResultsFrameViz(), 100);
+            return;
         }
+
+        renderValidationMessages(serverMessages.length ? serverMessages : flow.warnings);
+
+        currentOverlaps = data.overlaps;
+        currentSummary = data.summary;
+        currentSTAAD = data.staad_text;
+        setResultsStale(false);
+
+        // Update summary cards
+        document.getElementById('sum-members').textContent = data.summary.total_members;
+        document.getElementById('sum-loads').textContent = data.summary.total_loads;
+        document.getElementById('sum-affected').textContent = data.summary.affected_members;
+        document.getElementById('sum-rows').textContent = data.summary.total_overlap_rows;
+
+        // Populate results table
+        const tbody = document.getElementById('results-tbody');
+        tbody.innerHTML = '';
+        for (const r of data.overlaps) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${r.load_id}</td><td>${r.load_case}</td><td>${r.member_id}</td>
+                <td>${r.overlap_start_global}</td><td>${r.overlap_end_global}</td>
+                <td>${r.front_distance}</td><td>${r.back_distance}</td>
+                <td>${r.loaded_length}</td><td>${r.intensity}</td>
+                <td>${r.direction}</td><td>${r.staad_format}</td>
+            `;
+            tbody.appendChild(tr);
+        }
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-viz-card').style.display = 'block';
+        document.getElementById('results-frame-card').style.display = 'block';
+        document.getElementById('staad-preview').textContent = data.staad_text;
+
+        renderIndustryOutputSummary(data.summary, data.overlaps);
+        updateResultsVisualization();
+        setTimeout(() => renderResultsFrameViz(), 100);
     } catch (e) {
-        alert('Calculation error: ' + e.message);
+        if (!auto) {
+            notifyUser('Calculation error: ' + e.message, 'error', {
+                targetId: 'validation-messages',
+                sticky: true,
+                hint: 'Review Project Settings, Members, and Loads for missing/invalid values.',
+            });
+        }
     } finally {
-        btn.innerHTML = '<svg class="icon"><use href="#i-play"/></svg> Calculate Overlaps';
-        btn.disabled = false;
+        if (!auto) {
+            btn.innerHTML = originalBtn;
+            btn.disabled = false;
+        }
+        isAutoCalculating = false;
     }
+}
+
+async function runLongitudinalSweep(options = {}) {
+    const auto = !!options.auto;
+    const btn = document.getElementById('ml-run-btn');
+    const originalBtn = btn.innerHTML;
+    if (!auto) {
+        btn.disabled = true;
+        btn.innerHTML = '<svg class="icon"><use href="#i-play"/></svg> Running...';
+    } else {
+        isAutoSweeping = true;
+    }
+
+    try {
+        const flow = updateRunReadinessPanel();
+        if (!flow.overlapReady) {
+            renderValidationMessages(flow.errors);
+            throw new Error('Fix overlap input errors before running sweep.');
+        }
+
+        const settings = flow.settings;
+        const members = flow.members;
+        const loads = flow.loads;
+        const sweepErrors = validateLongitudinalSweepInputs(settings, members, loads);
+        if (sweepErrors.length) {
+            renderValidationMessages(sweepErrors.map(message => ({ level: 'error', message })));
+            throw new Error('Missing/invalid inputs:\n- ' + sweepErrors.join('\n- '));
+        }
+
+        const body = {
+            settings,
+            members,
+            loads,
+            increment: parseFloat(document.getElementById('ml-increment').value) || 0.1,
+        };
+
+        const resp = await fetch('/api/smart/longitudinal-critical', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (!data.success) {
+            const detailText = Array.isArray(data.details) && data.details.length
+                ? '\n- ' + data.details.join('\n- ')
+                : '';
+            throw new Error((data.error || 'Sweep failed') + detailText);
+        }
+
+        const model = data.result.model;
+        const inference = data.result.inference || {};
+        const vehiclesDetected = (inference.vehicles_from_loads || []).join(', ') || '—';
+        const matchedLoads = (inference.matched_load_ids || []).join(', ') || '—';
+        document.getElementById('ml-model-info').innerHTML =
+            `<strong>Model:</strong> span=${model.clear_span}m, cells=${model.num_cells}, total length=${model.total_length}m, increment=${model.sweep_increment}m` +
+            `<br><strong>Detected vehicles from Loads:</strong> ${vehiclesDetected}` +
+            `<br><strong>Matched Load IDs:</strong> ${matchedLoads}`;
+
+        const groupLabel = {
+            TOP_SLAB: 'Top Slab',
+            BOTTOM_SLAB: 'Bottom Slab',
+            SIDE_WALL: 'Side Walls',
+            INTERMEDIATE_WALL: 'Intermediate Walls',
+        };
+
+        const cardsHtmlWithActions = data.result.vehicles.map(v => {
+            const rows = v.group_results.map(g => `
+                <tr>
+                    <td>${groupLabel[g.group] || g.group}</td>
+                    <td>${g.max_sagging_moment.value.toFixed(3)}</td>
+                    <td>${g.max_sagging_moment.lead_position.toFixed(3)}</td>
+                    <td>${g.max_sagging_moment.member_id}</td>
+                    <td>${g.max_hogging_moment.value.toFixed(3)}</td>
+                    <td>${g.max_hogging_moment.lead_position.toFixed(3)}</td>
+                    <td>${g.max_hogging_moment.member_id}</td>
+                    <td>${g.max_shear_force.value.toFixed(3)}</td>
+                    <td>${g.max_shear_force.lead_position.toFixed(3)}</td>
+                    <td>${g.max_shear_force.member_id}</td>
+                    <td>
+                        <button class="btn btn-xs btn-ghost" onclick="selectSweepViz('${v.vehicle_code}', '${g.group}', 'max_sagging_moment')">Sag</button>
+                        <button class="btn btn-xs btn-ghost" onclick="selectSweepViz('${v.vehicle_code}', '${g.group}', 'max_hogging_moment')">Hog</button>
+                        <button class="btn btn-xs btn-ghost" onclick="selectSweepViz('${v.vehicle_code}', '${g.group}', 'max_shear_force')">She</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            return `
+                <div class="card" style="margin-top:12px">
+                    <h3 style="margin-bottom:8px">${v.vehicle_name}</h3>
+                    <p class="helper-text" style="margin-bottom:8px">
+                        ${v.notes} Train length: ${v.train_length.toFixed(3)}m, sweep positions: ${v.num_positions}.
+                    </p>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Member Group</th>
+                                    <th>Max Sagging M</th>
+                                    <th>Lead Position (m)</th>
+                                    <th>Member ID</th>
+                                    <th>Max Hogging M</th>
+                                    <th>Lead Position (m)</th>
+                                    <th>Member ID</th>
+                                    <th>Max Shear</th>
+                                    <th>Lead Position (m)</th>
+                                    <th>Member ID</th>
+                                    <th>Diagram</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        document.getElementById('ml-results-container').innerHTML = cardsHtmlWithActions;
+        document.getElementById('ml-result').style.display = 'block';
+        currentSweepResult = data.result;
+        setupLongitudinalSweepVisualization(data.result);
+    } catch (e) {
+        if (!auto) {
+            notifyUser('Longitudinal sweep error: ' + e.message, 'error', {
+                targetId: 'validation-messages',
+                sticky: true,
+                hint: 'Fix missing sweep fields and rerun with a valid increment.',
+            });
+        }
+    } finally {
+        if (!auto) {
+            btn.disabled = false;
+            btn.innerHTML = originalBtn;
+        }
+        isAutoSweeping = false;
+    }
+}
+
+function setupLongitudinalSweepVisualization(result) {
+    if (!result || !Array.isArray(result.vehicles) || !result.vehicles.length) return;
+
+    const panel = document.getElementById('ml-viz-panel');
+    const vehicleSel = document.getElementById('ml-viz-vehicle');
+    const groupSel = document.getElementById('ml-viz-group');
+    const effectSel = document.getElementById('ml-viz-effect');
+    if (!panel || !vehicleSel || !groupSel || !effectSel) return;
+
+    const prevVehicle = vehicleSel.value;
+    vehicleSel.innerHTML = result.vehicles
+        .map(v => `<option value="${v.vehicle_code}">${v.vehicle_name}</option>`)
+        .join('');
+    if (Array.from(vehicleSel.options).some(o => o.value === prevVehicle)) {
+        vehicleSel.value = prevVehicle;
+    }
+
+    if (!vehicleSel.dataset.bound) {
+        vehicleSel.addEventListener('change', () => {
+            updateSweepVizGroupOptions();
+            renderLongitudinalSweepViz();
+        });
+        groupSel.addEventListener('change', () => renderLongitudinalSweepViz());
+        effectSel.addEventListener('change', () => renderLongitudinalSweepViz());
+        vehicleSel.dataset.bound = '1';
+    }
+
+    panel.style.display = 'block';
+    updateSweepVizGroupOptions();
+    renderLongitudinalSweepViz();
+}
+
+function updateSweepVizGroupOptions() {
+    const vehicleSel = document.getElementById('ml-viz-vehicle');
+    const groupSel = document.getElementById('ml-viz-group');
+    if (!vehicleSel || !groupSel || !currentSweepResult) return;
+
+    const vehicle = currentSweepResult.vehicles.find(v => v.vehicle_code === vehicleSel.value)
+        || currentSweepResult.vehicles[0];
+    if (!vehicle) return;
+
+    const prev = groupSel.value;
+    const labelMap = {
+        TOP_SLAB: 'Top Slab',
+        BOTTOM_SLAB: 'Bottom Slab',
+        SIDE_WALL: 'Side Walls',
+        INTERMEDIATE_WALL: 'Intermediate Walls',
+    };
+    groupSel.innerHTML = (vehicle.group_results || [])
+        .map(g => `<option value="${g.group}">${labelMap[g.group] || g.group}</option>`)
+        .join('');
+
+    if (Array.from(groupSel.options).some(o => o.value === prev)) {
+        groupSel.value = prev;
+    }
+}
+
+function selectSweepViz(vehicleCode, group, effectKey) {
+    const vehicleSel = document.getElementById('ml-viz-vehicle');
+    const groupSel = document.getElementById('ml-viz-group');
+    const effectSel = document.getElementById('ml-viz-effect');
+    if (!vehicleSel || !groupSel || !effectSel) return;
+
+    vehicleSel.value = vehicleCode;
+    updateSweepVizGroupOptions();
+    groupSel.value = group;
+    effectSel.value = effectKey;
+    renderLongitudinalSweepViz();
+
+    const canvas = document.getElementById('ml-viz-canvas');
+    if (canvas) canvas.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function getSweepEffectLabel(effectKey) {
+    const labels = {
+        max_sagging_moment: 'Max Sagging Moment',
+        max_hogging_moment: 'Max Hogging Moment',
+        max_shear_force: 'Max Shear Force',
+    };
+    return labels[effectKey] || effectKey;
+}
+
+function resolveSweepMemberSegment(memberId, model) {
+    const cells = Math.max(1, Number(model.num_cells) || 1);
+    const span = Number(model.clear_span) || 1;
+    const height = Number(model.clear_height) || 3;
+    const id = Number(memberId);
+    if (!Number.isInteger(id) || id <= 0) return null;
+
+    if (id <= cells) {
+        const i = id - 1;
+        return { x1: i * span, x2: (i + 1) * span, y1: height, y2: height, orientation: 'H' };
+    }
+    if (id <= 2 * cells) {
+        const i = id - cells - 1;
+        return { x1: i * span, x2: (i + 1) * span, y1: 0, y2: 0, orientation: 'H' };
+    }
+
+    const wallStart = 2 * cells + 1;
+    const wallEnd = wallStart + cells;
+    if (id >= wallStart && id <= wallEnd) {
+        const i = id - wallStart;
+        const x = i * span;
+        return { x1: x, x2: x, y1: 0, y2: height, orientation: 'V' };
+    }
+    return null;
+}
+
+function renderLongitudinalSweepViz() {
+    const canvas = document.getElementById('ml-viz-canvas');
+    const caption = document.getElementById('ml-viz-caption');
+    const vehicleSel = document.getElementById('ml-viz-vehicle');
+    const groupSel = document.getElementById('ml-viz-group');
+    const effectSel = document.getElementById('ml-viz-effect');
+    if (!canvas || !caption || !vehicleSel || !groupSel || !effectSel || !currentSweepResult) return;
+
+    const model = currentSweepResult.model || {};
+    const totalLength = Math.max(0.1, Number(model.total_length) || 1);
+    const cells = Math.max(1, Number(model.num_cells) || 1);
+    const clearSpan = Number(model.clear_span) || (totalLength / cells);
+    const clearHeight = Number(model.clear_height) || 3;
+
+    const vehicle = currentSweepResult.vehicles.find(v => v.vehicle_code === vehicleSel.value)
+        || currentSweepResult.vehicles[0];
+    if (!vehicle) return;
+
+    const groupData = (vehicle.group_results || []).find(g => g.group === groupSel.value)
+        || (vehicle.group_results || [])[0];
+    if (!groupData) return;
+
+    const effectKey = effectSel.value;
+    const critical = groupData[effectKey];
+    if (!critical) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    const W = rect.width;
+    const H = rect.height;
+    const margin = { left: 52, right: 26, top: 56, bottom: 56 };
+    const drawW = Math.max(1, W - margin.left - margin.right);
+    const topY = margin.top + 52;
+    const bottomY = H - margin.bottom - 36;
+
+    const tx = (x) => margin.left + (x / totalLength) * drawW;
+    const ty = (y) => bottomY - (y / clearHeight) * (bottomY - topY);
+
+    // Background
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#111827');
+    grad.addColorStop(1, '#0b1220');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    const tickStep = totalLength <= 8 ? 0.5 : totalLength <= 20 ? 1.0 : 2.0;
+    for (let x = 0; x <= totalLength + 1e-9; x += tickStep) {
+        const px = tx(x);
+        ctx.beginPath();
+        ctx.moveTo(px, margin.top + 18);
+        ctx.lineTo(px, H - margin.bottom + 10);
+        ctx.stroke();
+    }
+
+    // Frame baseline and slabs
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(tx(0), ty(clearHeight));
+    ctx.lineTo(tx(totalLength), ty(clearHeight));
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(tx(0), ty(0));
+    ctx.lineTo(tx(totalLength), ty(0));
+    ctx.stroke();
+
+    // Vertical walls
+    for (let i = 0; i <= cells; i++) {
+        const x = i * clearSpan;
+        const isSide = i === 0 || i === cells;
+        ctx.strokeStyle = isSide ? '#22c55e' : '#f97316';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(tx(x), ty(0));
+        ctx.lineTo(tx(x), ty(clearHeight));
+        ctx.stroke();
+    }
+
+    // Highlight selected member group
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 4;
+    if (groupData.group === 'TOP_SLAB') {
+        ctx.beginPath();
+        ctx.moveTo(tx(0), ty(clearHeight));
+        ctx.lineTo(tx(totalLength), ty(clearHeight));
+        ctx.stroke();
+    } else if (groupData.group === 'BOTTOM_SLAB') {
+        ctx.beginPath();
+        ctx.moveTo(tx(0), ty(0));
+        ctx.lineTo(tx(totalLength), ty(0));
+        ctx.stroke();
+    } else if (groupData.group === 'SIDE_WALL') {
+        [0, totalLength].forEach(x => {
+            ctx.beginPath();
+            ctx.moveTo(tx(x), ty(0));
+            ctx.lineTo(tx(x), ty(clearHeight));
+            ctx.stroke();
+        });
+    } else if (groupData.group === 'INTERMEDIATE_WALL') {
+        for (let i = 1; i < cells; i++) {
+            const x = i * clearSpan;
+            ctx.beginPath();
+            ctx.moveTo(tx(x), ty(0));
+            ctx.lineTo(tx(x), ty(clearHeight));
+            ctx.stroke();
+        }
+    }
+
+    // Highlight deduced critical member
+    const segment = resolveSweepMemberSegment(critical.member_id, model);
+    if (segment) {
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(tx(segment.x1), ty(segment.y1));
+        ctx.lineTo(tx(segment.x2), ty(segment.y2));
+        ctx.stroke();
+    }
+
+    // Axle loads at critical lead position
+    const lead = Number(critical.lead_position) || 0;
+    const axleOffsets = Array.isArray(vehicle.axle_offsets_m) ? vehicle.axle_offsets_m : [];
+    const axleLoads = Array.isArray(vehicle.axle_loads_kN) ? vehicle.axle_loads_kN : [];
+    ctx.strokeStyle = '#f87171';
+    ctx.fillStyle = '#f87171';
+    ctx.lineWidth = 1.6;
+
+    axleOffsets.forEach((off, idx) => {
+        const xPos = lead + Number(off || 0);
+        if (xPos < 0 || xPos > totalLength) return;
+        const px = tx(xPos);
+        const y1 = ty(clearHeight) - 38;
+        const y2 = ty(clearHeight) - 6;
+
+        ctx.beginPath();
+        ctx.moveTo(px, y1);
+        ctx.lineTo(px, y2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(px, y2);
+        ctx.lineTo(px - 4, y2 - 6);
+        ctx.lineTo(px + 4, y2 - 6);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.font = '600 10px JetBrains Mono, monospace';
+        ctx.fillStyle = '#fca5a5';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${Number(axleLoads[idx] || 0).toFixed(0)}kN`, px, y1 - 4);
+        ctx.fillStyle = '#f87171';
+    });
+
+    // Lead marker line
+    if (lead >= 0 && lead <= totalLength) {
+        const lx = tx(lead);
+        ctx.strokeStyle = 'rgba(250,204,21,0.8)';
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(lx, margin.top + 14);
+        ctx.lineTo(lx, H - margin.bottom + 8);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    // Axis and labels
+    ctx.strokeStyle = '#9ca3af';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(tx(0), H - margin.bottom + 8);
+    ctx.lineTo(tx(totalLength), H - margin.bottom + 8);
+    ctx.stroke();
+
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.fillStyle = '#9ca3af';
+    for (let x = 0; x <= totalLength + 1e-9; x += tickStep) {
+        const px = tx(x);
+        ctx.beginPath();
+        ctx.moveTo(px, H - margin.bottom + 4);
+        ctx.lineTo(px, H - margin.bottom + 12);
+        ctx.stroke();
+        ctx.textAlign = 'center';
+        ctx.fillText(x.toFixed(1), px, H - margin.bottom + 24);
+    }
+
+    ctx.font = '600 13px Inter, sans-serif';
+    ctx.fillStyle = '#e5e7eb';
+    ctx.textAlign = 'left';
+    ctx.fillText('STAAD-Style Longitudinal Critical Position View', margin.left, 22);
+
+    ctx.font = '11px Inter, sans-serif';
+    ctx.fillStyle = '#a7b0c2';
+    ctx.fillText(`Increment: ${model.sweep_increment}m  |  Sweep positions: ${vehicle.num_positions}`, margin.left, 40);
+
+    const groupLabel = {
+        TOP_SLAB: 'Top Slab',
+        BOTTOM_SLAB: 'Bottom Slab',
+        SIDE_WALL: 'Side Walls',
+        INTERMEDIATE_WALL: 'Intermediate Walls',
+    };
+    const effectLabel = getSweepEffectLabel(effectKey);
+    caption.textContent = `${vehicle.vehicle_name} | ${groupLabel[groupData.group] || groupData.group} | ${effectLabel}: ${Number(critical.value).toFixed(3)} at lead ${Number(critical.lead_position).toFixed(3)} m (member ${critical.member_id})`;
+}
+
+function validateLongitudinalSweepInputs(settings, members, loads) {
+    const errors = [];
+
+    if (!String(settings.structure_type || '').startsWith('BOX_CULVERT_')) {
+        errors.push('Project Settings > Structure Type must be BOX_CULVERT_1/2/3/4CELL.');
+    }
+    if (!(settings.total_width > 0)) errors.push('Project Settings > Total Width must be > 0.');
+    if (!(settings.culvert_height > 0)) errors.push('Project Settings > Culvert Height must be > 0.');
+    if (!(settings.slab_thickness > 0)) errors.push('Project Settings > Top Slab Thickness must be > 0.');
+    if (!(settings.bottom_slab_thickness > 0)) errors.push('Project Settings > Bottom Slab Thickness must be > 0.');
+    if (!(settings.wall_thickness > 0)) errors.push('Project Settings > Wall Thickness must be > 0.');
+
+    if (!members.length) {
+        errors.push('Members tab must contain member rows.');
+    } else {
+        const groups = new Set(members.map(m => String(m.group || 'GENERAL').toUpperCase()));
+        const requiredBaseGroups = ['TOP_SLAB', 'BOTTOM_SLAB', 'LEFT_WALL', 'RIGHT_WALL'];
+        for (const g of requiredBaseGroups) {
+            if (!groups.has(g)) errors.push(`Members tab must include group "${g}".`);
+        }
+
+        const cellMap = {
+            BOX_CULVERT_1CELL: 1,
+            BOX_CULVERT_2CELL: 2,
+            BOX_CULVERT_3CELL: 3,
+            BOX_CULVERT_4CELL: 4,
+        };
+        const numCells = cellMap[String(settings.structure_type || '')] || 1;
+        if (numCells >= 2) {
+            const middleCount = Array.from(groups).filter(g => g.startsWith('MIDDLE_WALL_')).length;
+            if (middleCount < numCells - 1) {
+                errors.push(`Members tab needs at least ${numCells - 1} MIDDLE_WALL_* groups for ${numCells} cells.`);
+            }
+        }
+    }
+
+    if (!loads.length) {
+        errors.push('Loads tab must contain at least one vehicle load row.');
+    } else {
+        const recognized = loads.some(lo => {
+            const type = String(lo.load_type || '').toUpperCase();
+            const text = `${lo.id || ''} ${lo.notes || ''}`.toUpperCase();
+            if (type === 'IRC_70R' || type === 'IRC_CLASS_A' || type === 'IRC_CLASS_AA') return true;
+            if (type === 'SINGLE_AXLE_BOGIE' || type === 'DOUBLE_AXLE_BOGIE') return true;
+            if (text.includes('SINGLE') && text.includes('BOGIE')) return true;
+            if (text.includes('DOUBLE') && text.includes('BOGIE')) return true;
+            if (text.includes('MAX SINGLE AXLE') || text.includes('MAX BOGIE')) return true;
+            return false;
+        });
+        if (!recognized) {
+            errors.push('Loads tab needs recognizable vehicle tags (IRC_70R / IRC_CLASS_A / IRC_CLASS_AA / SINGLE_AXLE_BOGIE / DOUBLE_AXLE_BOGIE / single or double bogie keywords).');
+        }
+    }
+
+    const increment = parseFloat(document.getElementById('ml-increment').value);
+    if (!(increment > 0)) errors.push('Results > Increment must be > 0.');
+
+    return errors;
 }
 
 async function downloadExcel() {
     try {
-        const body = { settings: collectSettings(), members: collectMembers(), loads: collectLoads() };
+        const flow = updateRunReadinessPanel();
+        if (!flow.overlapReady) throw new Error('Fix input errors before export.');
+        const body = { settings: flow.settings, members: flow.members, loads: flow.loads };
         const resp = await fetch('/api/export/excel', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -352,12 +1404,14 @@ async function downloadExcel() {
         if (!resp.ok) throw new Error('Export failed');
         const blob = await resp.blob();
         downloadBlob(blob, `${collectSettings().project_name.replace(/ /g, '_')}_Load_Segmentation.xlsx`);
-    } catch (e) { alert('Excel export error: ' + e.message); }
+    } catch (e) { notifyUser('Excel export error: ' + e.message); }
 }
 
 async function downloadSTAAD() {
     try {
-        const body = { settings: collectSettings(), members: collectMembers(), loads: collectLoads() };
+        const flow = updateRunReadinessPanel();
+        if (!flow.overlapReady) throw new Error('Fix input errors before export.');
+        const body = { settings: flow.settings, members: flow.members, loads: flow.loads };
         const resp = await fetch('/api/export/staad', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -366,12 +1420,14 @@ async function downloadSTAAD() {
         if (!resp.ok) throw new Error('Export failed');
         const blob = await resp.blob();
         downloadBlob(blob, `${collectSettings().project_name.replace(/ /g, '_')}_STAAD.txt`);
-    } catch (e) { alert('STAAD export error: ' + e.message); }
+    } catch (e) { notifyUser('STAAD export error: ' + e.message); }
 }
 
 async function downloadCSV() {
     try {
-        const body = { settings: collectSettings(), members: collectMembers(), loads: collectLoads() };
+        const flow = updateRunReadinessPanel();
+        if (!flow.overlapReady) throw new Error('Fix input errors before export.');
+        const body = { settings: flow.settings, members: flow.members, loads: flow.loads };
         const resp = await fetch('/api/export/csv', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -380,7 +1436,7 @@ async function downloadCSV() {
         if (!resp.ok) throw new Error('Export failed');
         const blob = await resp.blob();
         downloadBlob(blob, 'overlap_results.csv');
-    } catch (e) { alert('CSV export error: ' + e.message); }
+    } catch (e) { notifyUser('CSV export error: ' + e.message); }
 }
 
 function copySTAAD() {
@@ -411,8 +1467,9 @@ async function addIRCTemplate(templateType) {
                     lo.direction, lo.notes
                 );
             }
+            onDataChanged('loads');
         }
-    } catch (e) { alert('Template error: ' + e.message); }
+    } catch (e) { notifyUser('Template error: ' + e.message); }
 }
 
 async function addCulvertTemplate(templateType) {
@@ -440,14 +1497,19 @@ async function addCulvertTemplate(templateType) {
                     lo.direction, lo.notes
                 );
             }
+            onDataChanged('loads');
         }
-    } catch (e) { alert('Template error: ' + e.message); }
+    } catch (e) { notifyUser('Template error: ' + e.message); }
 }
 
 // ─── Project Save / Load ────────────────────────────────────────────────────
 
 async function saveProject() {
-    const data = { settings: collectSettings(), members: collectMembers(), loads: collectLoads() };
+    const data = {
+        settings: collectSettings(),
+        members: collectMembersForProjectFile(),
+        loads: collectLoadsForProjectFile(),
+    };
     const resp = await fetch('/api/project/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -479,6 +1541,9 @@ async function loadProject(event) {
             document.getElementById('reference-axis').value = s.reference_axis || 'LEFT_EDGE';
             document.getElementById('culvert-height').value = s.culvert_height || 0;
             document.getElementById('fill-depth').value = s.fill_depth || 0;
+            document.getElementById('slab-thickness').value = s.slab_thickness || 0.3;
+            document.getElementById('bottom-slab-thickness').value = s.bottom_slab_thickness || 0.35;
+            document.getElementById('wall-thickness').value = s.wall_thickness || 0.3;
             document.getElementById('decimal-precision').value = s.decimal_precision || 2;
             document.getElementById('units').value = s.units || 'm';
         }
@@ -494,15 +1559,70 @@ async function loadProject(event) {
             document.getElementById('load-tbody').innerHTML = '';
             for (const lo of data.loads) {
                 addLoadRowWithData(lo.id, lo.load_case, lo.load_type, lo.start, lo.end,
-                    lo.intensity, lo.intensity_end || '', lo.direction, lo.notes || '');
+                    lo.intensity, lo.intensity_end ?? '', lo.direction, lo.notes || '');
             }
         }
-        updateVisualization();
+        onDataChanged('settings');
     }
     event.target.value = '';
 }
 
 // ─── CSV Import ─────────────────────────────────────────────────────────────
+
+function parseCSVText(text) {
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        const next = text[i + 1];
+
+        if (ch === '"') {
+            if (inQuotes && next === '"') {
+                cell += '"';
+                i += 1;
+            } else {
+                inQuotes = !inQuotes;
+            }
+            continue;
+        }
+
+        if (!inQuotes && ch === ',') {
+            row.push(cell);
+            cell = '';
+            continue;
+        }
+
+        if (!inQuotes && (ch === '\n' || ch === '\r')) {
+            if (ch === '\r' && next === '\n') i += 1;
+            row.push(cell);
+            if (row.some(v => String(v).trim() !== '')) rows.push(row);
+            row = [];
+            cell = '';
+            continue;
+        }
+
+        cell += ch;
+    }
+
+    row.push(cell);
+    if (row.some(v => String(v).trim() !== '')) rows.push(row);
+    return rows;
+}
+
+function normalizeHeader(value) {
+    return String(value || '').replace(/^\uFEFF/, '').trim().toLowerCase();
+}
+
+function csvEscape(value) {
+    const s = value === null || value === undefined ? '' : String(value);
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+        return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+}
 
 function importMembersCSV() {
     const input = document.createElement('input');
@@ -511,21 +1631,57 @@ function importMembersCSV() {
     input.onchange = (e) => {
         const reader = new FileReader();
         reader.onload = (ev) => {
-            const lines = ev.target.result.split('\n');
-            const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-            document.getElementById('member-tbody').innerHTML = '';
-            for (let i = 1; i < lines.length; i++) {
-                const vals = lines[i].split(',').map(v => v.trim());
-                if (vals.length >= 3) {
-                    const obj = {};
-                    headers.forEach((h, idx) => obj[h] = vals[idx]);
-                    addMemberRowWithData(
-                        obj.id || (1001 + i - 1), obj.start || 0, obj.end || 0,
-                        '', obj.group || 'GENERAL', obj.label || ''
-                    );
-                }
+            const rows = parseCSVText(String(ev.target.result || ''));
+            if (rows.length < 2) {
+                notifyUser('Members CSV is empty or missing data rows.', 'warning', {
+                    hint: 'Include a header row and at least one member row.',
+                });
+                return;
             }
-            updateVisualization();
+
+            const headers = rows[0].map(normalizeHeader);
+            const col = Object.fromEntries(headers.map((h, i) => [h, i]));
+            const required = ['id', 'start', 'end'];
+            const missing = required.filter(h => !(h in col));
+            if (missing.length) {
+                notifyUser(`Members CSV missing required columns: ${missing.join(', ')}`, 'error', {
+                    hint: 'Required columns: id, start, end.',
+                });
+                return;
+            }
+
+            document.getElementById('member-tbody').innerHTML = '';
+            let imported = 0;
+            let skipped = 0;
+            const issues = [];
+
+            for (let i = 1; i < rows.length; i++) {
+                const vals = rows[i];
+                const get = (name) => (vals[col[name]] ?? '').trim();
+                const id = get('id');
+                const start = get('start');
+                const end = get('end');
+                const group = (get('group') || 'GENERAL').toUpperCase();
+                const label = get('label');
+
+                if (!id || !start || !end) {
+                    skipped += 1;
+                    issues.push(`Row ${i + 1}: missing id/start/end.`);
+                    continue;
+                }
+
+                addMemberRowWithData(id, start, end, '', group, label);
+                imported += 1;
+            }
+
+            onDataChanged('members');
+            if (issues.length) {
+                notifyUser(`Imported ${imported} member rows, skipped ${skipped}.\n${issues.slice(0, 8).join('\n')}`, 'warning', {
+                    sticky: true,
+                });
+            } else {
+                notifyUser(`Imported ${imported} member rows.`, 'success');
+            }
         };
         reader.readAsText(e.target.files[0]);
     };
@@ -539,19 +1695,71 @@ function importLoadsCSV() {
     input.onchange = (e) => {
         const reader = new FileReader();
         reader.onload = (ev) => {
-            const lines = ev.target.result.split('\n');
-            const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-            for (let i = 1; i < lines.length; i++) {
-                const vals = lines[i].split(',').map(v => v.trim());
-                if (vals.length >= 5) {
-                    const obj = {};
-                    headers.forEach((h, idx) => obj[h] = vals[idx]);
-                    addLoadRowWithData(
-                        obj.id || `L${i}`, obj.load_case || 'LC1', obj.load_type || 'PARTIAL_UDL',
-                        obj.start, obj.end, obj.intensity, obj.intensity_end || '',
-                        obj.direction || 'GY', obj.notes || ''
-                    );
+            const rows = parseCSVText(String(ev.target.result || ''));
+            if (rows.length < 2) {
+                notifyUser('Loads CSV is empty or missing data rows.', 'warning', {
+                    hint: 'Include a header row and at least one load row.',
+                });
+                return;
+            }
+
+            const headers = rows[0].map(normalizeHeader);
+            const col = Object.fromEntries(headers.map((h, i) => [h, i]));
+            const required = ['id', 'load_case', 'load_type', 'start', 'end', 'intensity', 'direction'];
+            const missing = required.filter(h => !(h in col));
+            if (missing.length) {
+                notifyUser(`Loads CSV missing required columns: ${missing.join(', ')}`, 'error', {
+                    hint: 'Required columns: id, load_case, load_type, start, end, intensity, direction.',
+                });
+                return;
+            }
+
+            document.getElementById('load-tbody').innerHTML = '';
+            let imported = 0;
+            let skipped = 0;
+            const issues = [];
+
+            for (let i = 1; i < rows.length; i++) {
+                const vals = rows[i];
+                const get = (name) => (vals[col[name]] ?? '').trim();
+
+                const id = get('id') || `L${i}`;
+                const loadCase = get('load_case') || 'LC1';
+                const loadType = (get('load_type') || 'PARTIAL_UDL').toUpperCase();
+                const start = get('start');
+                const end = get('end');
+                const intensity = get('intensity');
+                const intensityEnd = get('intensity_end');
+                const direction = (get('direction') || 'GY').toUpperCase();
+                const notes = get('notes');
+
+                if (!start || !end || !intensity) {
+                    skipped += 1;
+                    issues.push(`Row ${i + 1}: missing start/end/intensity.`);
+                    continue;
                 }
+
+                addLoadRowWithData(
+                    id,
+                    loadCase,
+                    loadType,
+                    start,
+                    end,
+                    intensity,
+                    intensityEnd || '',
+                    direction,
+                    notes || '',
+                );
+                imported += 1;
+            }
+
+            onDataChanged('loads');
+            if (issues.length) {
+                notifyUser(`Imported ${imported} load rows, skipped ${skipped}.\n${issues.slice(0, 8).join('\n')}`, 'warning', {
+                    sticky: true,
+                });
+            } else {
+                notifyUser(`Imported ${imported} load rows.`, 'success');
             }
         };
         reader.readAsText(e.target.files[0]);
@@ -562,23 +1770,33 @@ function importLoadsCSV() {
 // ─── CSV Export ─────────────────────────────────────────────────────────────
 
 function exportMembersCSV() {
-    const members = collectMembers();
-    if (members.length === 0) { alert('No members to export.'); return; }
+    const members = collectMembersForProjectFile();
+    if (members.length === 0) {
+        notifyUser('No members to export.', 'warning', {
+            hint: 'Add member rows or import Members CSV first.',
+        });
+        return;
+    }
 
     let csv = 'id,start,end,group,label\n';
     for (const m of members) {
-        csv += `${m.id},${m.start},${m.end},${m.group || 'GENERAL'},"${m.label || ''}"\n`;
+        csv += `${csvEscape(m.id)},${csvEscape(m.start)},${csvEscape(m.end)},${csvEscape(m.group || 'GENERAL')},${csvEscape(m.label || '')}\n`;
     }
     downloadBlob(new Blob([csv], { type: 'text/csv' }), 'members.csv');
 }
 
 function exportLoadsCSV() {
-    const loads = collectLoads();
-    if (loads.length === 0) { alert('No loads to export.'); return; }
+    const loads = collectLoadsForProjectFile();
+    if (loads.length === 0) {
+        notifyUser('No loads to export.', 'warning', {
+            hint: 'Add load rows or import Loads CSV first.',
+        });
+        return;
+    }
 
     let csv = 'id,load_case,load_type,start,end,intensity,intensity_end,direction,notes\n';
     for (const lo of loads) {
-        csv += `${lo.id},${lo.load_case},${lo.load_type},${lo.start},${lo.end},${lo.intensity},${lo.intensity_end !== null ? lo.intensity_end : ''},${lo.direction},"${lo.notes || ''}"\n`;
+        csv += `${csvEscape(lo.id)},${csvEscape(lo.load_case)},${csvEscape(lo.load_type)},${csvEscape(lo.start)},${csvEscape(lo.end)},${csvEscape(lo.intensity)},${csvEscape(lo.intensity_end !== null ? lo.intensity_end : '')},${csvEscape(lo.direction)},${csvEscape(lo.notes || '')}\n`;
     }
     downloadBlob(new Blob([csv], { type: 'text/csv' }), 'loads.csv');
 }
@@ -598,13 +1816,76 @@ function downloadBlob(blob, filename) {
 
 // ─── Initialization ─────────────────────────────────────────────────────────
 
+function bindLiveInputHandlers() {
+    const settingsPanel = document.getElementById('tab-settings');
+    if (settingsPanel) {
+        settingsPanel.addEventListener('input', (e) => {
+            if (e.target && e.target.matches('input, select, textarea')) {
+                onDataChanged('settings');
+            }
+        });
+        settingsPanel.addEventListener('change', (e) => {
+            if (e.target && e.target.matches('input, select, textarea')) {
+                onDataChanged('settings');
+            }
+        });
+    }
+
+    const memberBody = document.getElementById('member-tbody');
+    if (memberBody) {
+        memberBody.addEventListener('input', (e) => {
+            if (!e.target) return;
+            const row = e.target.closest('tr');
+            if (row && (e.target.classList.contains('m-start') || e.target.classList.contains('m-end'))) {
+                updateMemberWidthCell(row);
+            }
+            onDataChanged('members');
+        });
+        memberBody.addEventListener('change', () => onDataChanged('members'));
+    }
+
+    const loadBody = document.getElementById('load-tbody');
+    if (loadBody) {
+        loadBody.addEventListener('input', () => onDataChanged('loads'));
+        loadBody.addEventListener('change', () => onDataChanged('loads'));
+    }
+
+    const mlIncrement = document.getElementById('ml-increment');
+    if (mlIncrement) {
+        mlIncrement.addEventListener('input', () => {
+            updateRunReadinessPanel();
+            scheduleLiveSweep();
+        });
+        mlIncrement.addEventListener('change', () => {
+            updateRunReadinessPanel();
+            scheduleLiveSweep();
+        });
+    }
+
+    const autoRun = document.getElementById('auto-run-toggle');
+    if (autoRun) {
+        autoRun.addEventListener('change', () => {
+            if (autoRun.checked) scheduleLiveCalculation();
+        });
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Set today's date
     document.getElementById('project-date').value = new Date().toISOString().split('T')[0];
+    bindLiveInputHandlers();
+    toggleWidthMode();
 
     // Load default example data
     generateAutoMembers();
     loadDefaultLoads();
+    updateRunReadinessPanel();
+
+    window.addEventListener('resize', () => {
+        if (currentSweepResult && typeof renderLongitudinalSweepViz === 'function') {
+            renderLongitudinalSweepViz();
+        }
+    });
 });
 
 function prefillBoxCulvertMembers() {
@@ -633,7 +1914,7 @@ function prefillBoxCulvertMembers() {
 
     // Update total width to match
     document.getElementById('total-width').value = 21.6;
-    updateVisualization();
+    onDataChanged('members');
 }
 
 function loadDefaultLoads() {
@@ -641,6 +1922,7 @@ function loadDefaultLoads() {
     addLoadRowWithData('L1', 'LC1', 'PARTIAL_UDL', '0.90', '2.40', '-25', '', 'GY', 'Patch load 1');
     addLoadRowWithData('L2', 'LC1', 'PARTIAL_UDL', '2.10', '5.60', '-18', '', 'GY', 'Patch load 2');
     addLoadRowWithData('L3', 'LC2', 'PARTIAL_UDL', '6.20', '8.10', '-12', '', 'GY', 'Patch load 3');
+    onDataChanged('loads');
 }
 
 
@@ -665,9 +1947,9 @@ async function calcImpactFactor() {
             document.getElementById('if-formula').innerHTML = `<strong>Formula:</strong> ${r.formula_used}${r.notes ? '<br>' + r.notes : ''}`;
             document.getElementById('if-result').style.display = 'block';
         } else {
-            alert('Error: ' + data.error);
+            notifyUser('Error: ' + data.error);
         }
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 async function genLoadCombinations() {
@@ -690,9 +1972,9 @@ async function genLoadCombinations() {
             document.getElementById('lc-staad-text').textContent = data.staad_text;
             document.getElementById('lc-result').style.display = 'block';
         } else {
-            alert('Error: ' + data.error);
+            notifyUser('Error: ' + data.error);
         }
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 async function calcDispersion() {
@@ -716,9 +1998,9 @@ async function calcDispersion() {
             document.getElementById('disp-formula').innerHTML = '<strong>Calculation:</strong><br>' + r.formula.replace(/\n/g, '<br>');
             document.getElementById('disp-result').style.display = 'block';
         } else {
-            alert('Error: ' + data.error);
+            notifyUser('Error: ' + data.error);
         }
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 async function calcQuantities() {
@@ -752,9 +2034,9 @@ async function calcQuantities() {
             });
             document.getElementById('qty-result').style.display = 'block';
         } else {
-            alert('Error: ' + data.error);
+            notifyUser('Error: ' + data.error);
         }
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 async function runDesignChecks() {
@@ -802,9 +2084,9 @@ async function runDesignChecks() {
             }
             document.getElementById('dc-result').style.display = 'block';
         } else {
-            alert('Error: ' + data.error);
+            notifyUser('Error: ' + data.error);
         }
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 async function calcReinforcement() {
@@ -835,9 +2117,9 @@ async function calcReinforcement() {
             }
             document.getElementById('rh-result').style.display = 'block';
         } else {
-            alert('Error: ' + (data.error || 'No results'));
+            notifyUser('Error: ' + (data.error || 'No results'));
         }
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 async function calcSkew() {
@@ -864,9 +2146,9 @@ async function calcSkew() {
                 notesEl.style.display = 'none';
             }
         } else {
-            alert('Error: ' + data.error);
+            notifyUser('Error: ' + data.error);
         }
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 async function genSTAADFile(download) {
@@ -906,10 +2188,10 @@ async function genSTAADFile(download) {
                 document.getElementById('std-preview').textContent = data.staad_content;
                 document.getElementById('std-result').style.display = 'block';
             } else {
-                alert('Error: ' + data.error);
+                notifyUser('Error: ' + data.error);
             }
         }
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 async function genBBS() {
@@ -944,9 +2226,9 @@ async function genBBS() {
             });
             document.getElementById('bbs-result').style.display = 'block';
         } else {
-            alert('Error: ' + data.error);
+            notifyUser('Error: ' + data.error);
         }
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 function copyText(elementId) {
@@ -989,7 +2271,7 @@ async function calcCrackWidth() {
         document.getElementById('cw-sigma').textContent = r.sigma_sr;
         document.getElementById('cw-formula').textContent = r.formula + (r.notes ? '\n\n' + r.notes : '');
         document.getElementById('cw-result').style.display = 'block';
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 async function calcShearCheck() {
@@ -1018,7 +2300,7 @@ async function calcShearCheck() {
         document.getElementById('sc-status').style.color = r.shear_status.includes('INADEQUATE') ? '#ef4444' : (isOk ? '#10b981' : '#f59e0b');
         document.getElementById('sc-formula').textContent = r.formula + '\n\n' + r.notes;
         document.getElementById('sc-result').style.display = 'block';
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 async function calcBrakingForce() {
@@ -1041,7 +2323,7 @@ async function calcBrakingForce() {
         document.getElementById('bf-applied').style.color = r.applied ? '#f59e0b' : '#10b981';
         document.getElementById('bf-formula').textContent = r.formula + '\n\n' + r.notes;
         document.getElementById('bf-result').style.display = 'block';
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 
@@ -1071,7 +2353,7 @@ async function calcTempShrinkage() {
         document.getElementById('ts-shrink-f').textContent = r.shrinkage_force;
         document.getElementById('ts-formula').textContent = r.formula + '\n\n' + r.notes;
         document.getElementById('ts-result').style.display = 'block';
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 async function calcEffectiveWidth() {
@@ -1094,7 +2376,7 @@ async function calcEffectiveWidth() {
         document.getElementById('ew-disp').textContent = r.dispersion_width;
         document.getElementById('ew-formula').textContent = r.formula + (r.notes ? '\n\n' + r.notes : '');
         document.getElementById('ew-result').style.display = 'block';
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 async function calcDeflection() {
@@ -1117,7 +2399,7 @@ async function calcDeflection() {
         document.getElementById('df-status').style.color = r.status === 'PASS' ? '#10b981' : '#ef4444';
         document.getElementById('df-formula').textContent = r.formula + '\n\n' + r.notes;
         document.getElementById('df-result').style.display = 'block';
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 async function calcSoilSprings() {
@@ -1138,7 +2420,7 @@ async function calcSoilSprings() {
         document.getElementById('ss-spring').textContent = r.spring_stiffness.toLocaleString();
         document.getElementById('ss-formula').textContent = r.formula + '\n\n' + r.notes;
         document.getElementById('ss-result').style.display = 'block';
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 async function calcClearCover() {
@@ -1159,7 +2441,7 @@ async function calcClearCover() {
         document.getElementById('cc-cement').textContent = r.min_cement + ' kg/m³';
         document.getElementById('cc-notes').textContent = r.notes;
         document.getElementById('cc-result').style.display = 'block';
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
 
 
@@ -1188,5 +2470,5 @@ async function calcSettlement() {
         document.getElementById('st-status').style.color = r.status === 'PASS' ? '#10b981' : '#ef4444';
         document.getElementById('st-formula').textContent = r.formula + '\n\n' + r.notes;
         document.getElementById('st-result').style.display = 'block';
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { notifyUser('Error: ' + e.message); }
 }
