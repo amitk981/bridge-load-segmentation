@@ -319,7 +319,8 @@
                             <li>Define members once → auto-generate equal strips</li>
                             <li>Click IRC template → loads auto-populated per IRC 6:2017</li>
                             <li>Run Readiness panel shows missing fields instantly before calculation</li>
-                            <li>Click Calculate (or keep auto-update ON) → all d1/d2 computed <strong>instantly</strong></li>
+                            <li>Click Calculate (or keep auto-update ON) → all d1/d2 computed <strong>instantly</strong>
+                            </li>
                             <li>Copy STAAD commands → paste directly into STAAD.Pro editor</li>
                             <li>Excel export for documentation / checking / client submission</li>
                         </ul>
@@ -619,7 +620,8 @@
                     <p class="guide-section-desc">Results tab now includes live data-flow checks before run, overlap
                         outputs, longitudinal sweep outputs, and visual QA panels. The key overlap outputs are
                         <strong>d1 (front distance)</strong> and <strong>d2 (back distance)</strong> — these map
-                        directly to STAAD.Pro's <code>MEMBER LOAD UNI dir f1 d1 d2</code> syntax.</p>
+                        directly to STAAD.Pro's <code>MEMBER LOAD UNI dir f1 d1 d2</code> syntax.
+                    </p>
 
                     <table class="guide-table">
                         <thead>
@@ -785,7 +787,8 @@
                         <tbody>
                             <tr>
                                 <td>Project_Info</td>
-                                <td>All project settings and metadata (including top/bottom slab and wall thickness)</td>
+                                <td>All project settings and metadata (including top/bottom slab and wall thickness)
+                                </td>
                                 <td>Traceability — who, what, when</td>
                             </tr>
                             <tr>
@@ -1092,7 +1095,8 @@
                                 <td>5</td>
                                 <td><strong>STAAD Load Input</strong></td>
                                 <td>✅ <strong>THIS TOOL</strong></td>
-                                <td>Review snapshot + visuals, generate MEMBER LOAD UNI/LIN commands, paste into STAAD</td>
+                                <td>Review snapshot + visuals, generate MEMBER LOAD UNI/LIN commands, paste into STAAD
+                                </td>
                             </tr>
                             <tr>
                                 <td>6</td>
@@ -1305,7 +1309,8 @@
                     <p class="helper-text">These details appear on the cover sheet of the Excel export and serve as
                         project traceability for checking/approval.</p>
                     <div style="margin-bottom:12px">
-                        <button class="btn btn-sm btn-primary" onclick="loadSampleProject3Cell()" title="Pre-fill all tabs with a realistic 3-cell box culvert example including IRC loads">
+                        <button class="btn btn-sm btn-primary" onclick="loadSampleProject3Cell()"
+                            title="Pre-fill all tabs with a realistic 3-cell box culvert example including IRC loads">
                             🧪 Load Sample Project (3-Cell Box Culvert)
                         </button>
                     </div>
@@ -1374,29 +1379,40 @@
                             <span class="field-hint">Only used if Reference Axis = Custom</span>
                         </div>
                         <div class="form-group">
-                            <label>Culvert Height (m)</label>
+                            <label>n. Clear Height (max) (m)</label>
                             <input type="number" id="culvert-height" value="3.000" step="0.001" min="0">
-                            <span class="field-hint">Wall height — used for EP/WP templates</span>
+                            <span class="field-hint">Inner clear height of the cell</span>
                         </div>
                         <div class="form-group">
-                            <label>Clear Span of Cell (m)</label>
+                            <label>j. Clear Span of Cell (m)</label>
                             <input type="number" id="clear-span" value="4.0" step="0.01" min="0.5">
-                            <span class="field-hint">For box culvert generation</span>
+                            <span class="field-hint">Inner clear horizontal span of one cell</span>
                         </div>
                         <div class="form-group">
-                            <label>Number of Cells</label>
+                            <label>k. Number of Cells</label>
                             <input type="number" id="num-cells" value="1" min="1" max="10">
                             <span class="field-hint">Required for box culvert model</span>
                         </div>
                         <div class="form-group">
-                            <label>Top Slab Thickness (m)</label>
+                            <label>d. Thickness of Top Slab (m)</label>
                             <input type="number" id="slab-thickness" value="0.30" step="0.01" min="0.01">
                             <span class="field-hint">Required for longitudinal sweep stiffness model</span>
                         </div>
                         <div class="form-group">
-                            <label>Bottom Slab Thickness (m)</label>
+                            <label>e. Thickness of Bottom Slab (m)</label>
                             <input type="number" id="bottom-slab-thickness" value="0.35" step="0.01" min="0.01">
-                            <span class="field-hint">Required for realistic sweep stiffness and design output reporting</span>
+                            <span class="field-hint">Required for realistic sweep stiffness and design output
+                                reporting</span>
+                        </div>
+                        <div class="form-group">
+                            <label>f. Thickness of External Wall (m)</label>
+                            <input type="number" id="wall-thickness" value="0.30" step="0.01" min="0.01">
+                            <span class="field-hint">Required for longitudinal sweep and multi-cell geometry</span>
+                        </div>
+                        <div class="form-group">
+                            <label>f. Thickness of Internal Wall (m)</label>
+                            <input type="number" id="mid-wall-thickness" value="0.30" step="0.01" min="0.01">
+                            <span class="field-hint">Intermediate vertical wall thickness</span>
                         </div>
                         <div class="form-group">
                             <label>Ext Wall Thickness (m)</label>
@@ -1515,7 +1531,8 @@
                     <div style="display:flex; gap:8px;">
                         <button class="btn btn-primary" onclick="generateAutoMembers()" style="margin-top:12px">Generate
                             Deck Strips</button>
-                        <button class="btn btn-accent" onclick="generateBoxCulvertMembers()" style="margin-top:12px">Generate
+                        <button class="btn btn-accent" onclick="generateBoxCulvertMembers()"
+                            style="margin-top:12px">Generate
                             Box Culvert</button>
                     </div>
                 </div>
@@ -1526,7 +1543,9 @@
                         <div class="io-group">
                             <span class="io-label">Edit</span>
                             <button class="btn btn-sm btn-primary" onclick="addMemberRow()">+ Add Row</button>
-                            <button class="btn btn-sm btn-accent" onclick="prefillBoxCulvertMembers()" title="Prefill 2-cell box culvert member layout (21.6m width)">⚡ Prefill Culvert</button>
+                            <button class="btn btn-sm btn-accent" onclick="prefillBoxCulvertMembers()"
+                                title="Prefill 2-cell box culvert member layout (21.6m width)">⚡ Prefill
+                                Culvert</button>
                         </div>
                         <div class="io-separator"></div>
                         <div class="io-group">
@@ -1552,7 +1571,8 @@
                                 <li><strong>id</strong> — STAAD member number (integer)</li>
                                 <li><strong>start</strong> — Left boundary, metres from ref axis</li>
                                 <li><strong>end</strong> — Right boundary, metres from ref axis</li>
-                                <li><strong>group</strong> — GENERAL, TOP_SLAB, BOTTOM_SLAB, LEFT_WALL, RIGHT_WALL, MIDDLE_WALL_1, MIDDLE_WALL_2, MIDDLE_WALL_3</li>
+                                <li><strong>group</strong> — GENERAL, TOP_SLAB, BOTTOM_SLAB, LEFT_WALL, RIGHT_WALL,
+                                    MIDDLE_WALL_1, MIDDLE_WALL_2, MIDDLE_WALL_3</li>
                                 <li><strong>label</strong> — Optional description</li>
                             </ul>
                         </div>
@@ -1585,11 +1605,14 @@
                     strips cover the full bridge width without gaps.</p>
                 <div id="visualization-container" style="display:flex; flex-direction:column; gap:20px;">
                     <div>
-                        <h4 style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">1D STAAD Member Strip Mapping</h4>
+                        <h4 style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">1D STAAD Member Strip
+                            Mapping</h4>
                         <svg id="bridge-svg" width="100%" height="200"></svg>
                     </div>
-                    <div id="geometry-2d-frame-container" style="display:none; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px;">
-                        <h4 style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">Physical Structural Cross-Section</h4>
+                    <div id="geometry-2d-frame-container"
+                        style="display:none; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px;">
+                        <h4 style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">Physical Structural
+                            Cross-Section</h4>
                         <canvas id="geometry-2d-canvas" style="width:100%; height:300px; display:block;"></canvas>
                     </div>
                 </div>
@@ -1622,13 +1645,15 @@
                     <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('IRC_70R_TRACKED')"
                         title="700kN tracked, 2 tracks × 0.84m, CTC 2.06m, 1.2m kerb clearance">70R Tracked</button>
                     <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('IRC_70R_WHEELED')"
-                        title="70R wheeled critical axle template with full axle-train metadata in notes">70R Wheeled</button>
+                        title="70R wheeled critical axle template with full axle-train metadata in notes">70R
+                        Wheeled</button>
                     <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('IRC_CLASS_A')"
                         title="114kN axle, 2 wheels × 0.25m, CTC 1.8m, 0.15m kerb clearance">Class A</button>
                     <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('SINGLE_AXLE_BOGIE')"
                         title="Max single axle bogie (20t) template with metadata">Single Axle Bogie</button>
                     <button class="btn btn-xs btn-accent" onclick="addIRCTemplate('DOUBLE_AXLE_BOGIE')"
-                        title="Max double axle bogie (20t+20t, 1.22m spacing) template with metadata">Double Axle Bogie</button>
+                        title="Max double axle bogie (20t+20t, 1.22m spacing) template with metadata">Double Axle
+                        Bogie</button>
                     <span class="template-label" style="margin-left:16px;">Culvert:</span>
                     <button class="btn btn-xs btn-accent-alt" onclick="addCulvertTemplate('EARTH_PRESSURE')"
                         title="Lateral EP: K₀γh, triangular 0 to K₀γH (TRAP)">Earth Pressure</button>
@@ -1666,7 +1691,8 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
                         <ul class="csv-columns">
                             <li><strong>id</strong> — Unique load identifier (L1, EP1, AA_T1)</li>
                             <li><strong>load_case</strong> — Case grouping (LC1, LC2 …)</li>
-                            <li><strong>load_type</strong> — PARTIAL_UDL, IRC_CLASS_AA, IRC_70R, IRC_CLASS_A, SINGLE_AXLE_BOGIE, DOUBLE_AXLE_BOGIE, EARTH_PRESSURE …</li>
+                            <li><strong>load_type</strong> — PARTIAL_UDL, IRC_CLASS_AA, IRC_70R, IRC_CLASS_A,
+                                SINGLE_AXLE_BOGIE, DOUBLE_AXLE_BOGIE, EARTH_PRESSURE …</li>
                             <li><strong>start</strong> — Left edge position in metres</li>
                             <li><strong>end</strong> — Right edge position in metres</li>
                             <li><strong>intensity</strong> — kN/m (negative = downward for GY)</li>
@@ -1747,7 +1773,8 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
                                 <use href="#i-play" />
                             </svg> Calculate Overlaps
                         </button>
-                        <label class="inline-toggle" title="Re-run overlap calculation automatically when inputs change">
+                        <label class="inline-toggle"
+                            title="Re-run overlap calculation automatically when inputs change">
                             <input type="checkbox" id="auto-run-toggle" checked>
                             <span>Auto-update results while editing</span>
                         </label>
@@ -1765,22 +1792,30 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
                             </svg> IRC Longitudinal Moving-Load Sweep</h2>
                     </div>
                     <p class="helper-text">
-                        Auto-reads current <strong>Loads tab</strong> for vehicle selection and <strong>Members + Project
-                            Settings</strong> for geometry inference, then reports critical longitudinal lead positions for
+                        Auto-reads current <strong>Loads tab</strong> for vehicle selection and <strong>Members +
+                            Project
+                            Settings</strong> for geometry inference, then reports critical longitudinal lead positions
+                        for
                         top slab, bottom slab, side walls, and intermediate walls.
                     </p>
                     <p class="helper-text">
                         Vehicle detection from Loads tab: <code>IRC_70R</code> (tracked by default, wheeled if ID/notes
-                        contain "wheeled"), <code>IRC_CLASS_A</code>, <code>IRC_CLASS_AA</code> (mapped as tracked heavy),
-                        explicit <code>SINGLE_AXLE_BOGIE</code> / <code>DOUBLE_AXLE_BOGIE</code> load types, and fallback
+                        contain "wheeled"), <code>IRC_CLASS_A</code>, <code>IRC_CLASS_AA</code> (mapped as tracked
+                        heavy),
+                        explicit <code>SINGLE_AXLE_BOGIE</code> / <code>DOUBLE_AXLE_BOGIE</code> load types, and
+                        fallback
                         bogie keywords in ID/notes ("single bogie", "double bogie", "max single axle", "max bogie").
                     </p>
                     <div class="guide-callout guide-callout-info" style="margin-top:8px">
                         <strong>Required Fields for Auto-Calculation:</strong>
                         <ul class="csv-columns" style="margin-top:6px">
-                            <li><strong>Project Settings tab:</strong> Structure Type = BOX_CULVERT_*, Total Width, Culvert Height, Top Slab Thickness, Bottom Slab Thickness, Wall Thickness</li>
-                            <li><strong>Members tab:</strong> member rows with groups tagged as TOP_SLAB, BOTTOM_SLAB, LEFT_WALL, RIGHT_WALL (and MIDDLE_WALL_* for multi-cell)</li>
-                            <li><strong>Loads tab:</strong> load rows with recognized vehicle tags in load_type (IRC_70R, IRC_CLASS_A, IRC_CLASS_AA, SINGLE_AXLE_BOGIE, DOUBLE_AXLE_BOGIE) or bogie ID/notes keywords</li>
+                            <li><strong>Project Settings tab:</strong> Structure Type = BOX_CULVERT_*, Total Width,
+                                Culvert Height, Top Slab Thickness, Bottom Slab Thickness, Wall Thickness</li>
+                            <li><strong>Members tab:</strong> member rows with groups tagged as TOP_SLAB, BOTTOM_SLAB,
+                                LEFT_WALL, RIGHT_WALL (and MIDDLE_WALL_* for multi-cell)</li>
+                            <li><strong>Loads tab:</strong> load rows with recognized vehicle tags in load_type
+                                (IRC_70R, IRC_CLASS_A, IRC_CLASS_AA, SINGLE_AXLE_BOGIE, DOUBLE_AXLE_BOGIE) or bogie
+                                ID/notes keywords</li>
                             <li><strong>This panel:</strong> Increment (m)</li>
                         </ul>
                     </div>
@@ -1791,7 +1826,8 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
                     </div>
 
                     <div style="margin-top:16px">
-                        <button class="btn btn-primary" id="ml-run-btn" onclick="runLongitudinalSweep()"><svg class="icon">
+                        <button class="btn btn-primary" id="ml-run-btn" onclick="runLongitudinalSweep()"><svg
+                                class="icon">
                                 <use href="#i-play" />
                             </svg> Run Longitudinal Sweep</button>
                     </div>
@@ -1801,7 +1837,8 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
                         <div id="ml-viz-panel" class="card" style="display:none; margin-top:12px">
                             <h3 style="margin-bottom:8px">STAAD-Style Critical Position Diagram</h3>
                             <p class="helper-text" style="margin-bottom:10px">
-                                Updates from deduced critical lead positions. Changing increment auto-refreshes this diagram
+                                Updates from deduced critical lead positions. Changing increment auto-refreshes this
+                                diagram
                                 when inputs are valid.
                             </p>
                             <div class="form-grid">
@@ -1900,8 +1937,10 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
 
                 <div class="card" id="results-card" style="display:none">
                     <h2 class="card-title">Overlap Calculations (Detailed Table)</h2>
-                    <p class="helper-text">Each row = one (load, member) pair where an overlap exists. <strong>d1 and d2 are
-                            the exact values</strong> you enter in STAAD.Pro's <code>MEMBER LOAD</code> command. Verify: d2
+                    <p class="helper-text">Each row = one (load, member) pair where an overlap exists. <strong>d1 and d2
+                            are
+                            the exact values</strong> you enter in STAAD.Pro's <code>MEMBER LOAD</code> command. Verify:
+                        d2
                         > d1, loaded length > 0, and intensity sign is correct.</p>
                     <div class="table-container">
                         <table id="results-table">
@@ -1912,9 +1951,11 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
                                     <th title="STAAD member number">Member</th>
                                     <th title="Global position where overlap starts">Overlap Start</th>
                                     <th title="Global position where overlap ends">Overlap End</th>
-                                    <th title="STAAD d1: distance from member start to load start on this member">d1 (Front)
+                                    <th title="STAAD d1: distance from member start to load start on this member">d1
+                                        (Front)
                                     </th>
-                                    <th title="STAAD d2: distance from member start to load end on this member">d2 (Back)
+                                    <th title="STAAD d2: distance from member start to load end on this member">d2
+                                        (Back)
                                     </th>
                                     <th title="d2 − d1 = loaded portion on this member">Length</th>
                                     <th title="Load intensity at overlap start (kN/m)">Intensity</th>
@@ -1933,7 +1974,8 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
 
                 <div class="card" id="results-viz-card" style="display:none">
                     <h2 class="card-title">Overlap Visualization</h2>
-                    <p class="helper-text">Loads shown above, member strips below. Dashed cyan areas = overlap zones where
+                    <p class="helper-text">Loads shown above, member strips below. Dashed cyan areas = overlap zones
+                        where
                         load acts on the member. Verify that load positions match your bridge cross-section layout.</p>
                     <div id="results-viz-container">
                         <svg id="results-svg" width="100%" height="280"></svg>
@@ -1944,8 +1986,10 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
                     <h2 class="card-title"><svg class="icon">
                             <use href="#i-microscope" />
                         </svg> STAAD.Pro Frame Visualization</h2>
-                    <p class="helper-text">Visual representation of your load-member model as it would appear in STAAD.Pro.
-                        Shows load patches, member strips, overlap zones, d1/d2 distances, and intensities from your actual
+                    <p class="helper-text">Visual representation of your load-member model as it would appear in
+                        STAAD.Pro.
+                        Shows load patches, member strips, overlap zones, d1/d2 distances, and intensities from your
+                        actual
                         calculation data.</p>
                     <canvas id="results-frame-canvas"
                         style="width:100%; height:440px; border-radius:12px; border:1px solid var(--border)"></canvas>
@@ -2343,8 +2387,8 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
                             step="0.05"></div>
                     <div class="form-group"><label>Wall (m)</label><input type="number" id="std-wall" value="0.30"
                             step="0.05"></div>
-                    <div class="form-group"><label>Interm. Wall (m)</label><input type="number" id="std-mid-wall" value="0.30"
-                            step="0.05" title="Thickness of interior walls"></div>
+                    <div class="form-group"><label>Interm. Wall (m)</label><input type="number" id="std-mid-wall"
+                            value="0.30" step="0.05" title="Thickness of interior walls"></div>
                     <div class="form-group"><label>Cells</label><input type="number" id="std-cells" value="1" min="1"
                             max="8"></div>
                     <div class="form-group"><label>fck (MPa)</label><input type="number" id="std-fck" value="30"></div>

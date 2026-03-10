@@ -1547,7 +1547,11 @@ function renderLongitudinalSweepViz() {
                 const pts = member.points;
                 if (pts.length < 2) return;
 
-                const isVertical = member.group.includes('WALL');
+                const isLeftWall = member.group === 'SIDE_WALL' && pts[0].X < (totalLength / 2);
+                const isRightWall = member.group === 'SIDE_WALL' && pts[0].X > (totalLength / 2);
+                const isBottomSlab = member.group === 'BOTTOM_SLAB';
+                const isTopSlab = member.group === 'TOP_SLAB';
+                const isMidWall = member.group === 'INTERMEDIATE_WALL';
 
                 // Filled BMD polygon
                 ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
@@ -1562,11 +1566,27 @@ function renderLongitudinalSweepViz() {
 
                 pts.forEach(pt => {
                     let dX = 0, dY = 0;
-                    if (isVertical) {
-                        dX = pt.M * scaleM;
+                    
+                    // Tension side convention:
+                    // Top Slab: +M (sagging) plots Downward (+dY)
+                    // Bottom Slab: +M (sagging) plots Upward (-dY)
+                    // Left Wall: +M (tension inside) plots Rightward (+dX)
+                    // Right Wall: +M (tension inside) plots Leftward (-dX)
+                    if (isTopSlab) {
+                        dY = pt.M * scaleM;
+                    } else if (isBottomSlab) {
+                        dY = -pt.M * scaleM; 
+                    } else if (isLeftWall) {
+                        dX = pt.M * scaleM; 
+                    } else if (isRightWall) {
+                        dX = -pt.M * scaleM; 
+                    } else if (isMidWall) {
+                        dX = pt.M * scaleM; 
                     } else {
+                        // fallback
                         dY = pt.M * scaleM;
                     }
+
                     ctx.lineTo(tx(pt.X) + dX, ty(pt.Y) + dY);
 
                     if (Math.abs(pt.M) > Math.abs(peakVal)) {
@@ -1583,13 +1603,17 @@ function renderLongitudinalSweepViz() {
                 // ── Peak value label on BMD ──
                 if (Math.abs(peakVal) > 0.01) {
                     let labelX, labelY;
-                    if (isVertical) {
-                        labelX = tx(peakPt.X) + peakVal * scaleM;
-                        labelY = ty(peakPt.Y);
-                    } else {
-                        labelX = tx(peakPt.X);
-                        labelY = ty(peakPt.Y) + peakVal * scaleM;
-                    }
+                    let dX = 0, dY = 0;
+
+                    if (isTopSlab) dY = peakVal * scaleM;
+                    else if (isBottomSlab) dY = -peakVal * scaleM;
+                    else if (isLeftWall) dX = peakVal * scaleM;
+                    else if (isRightWall) dX = -peakVal * scaleM;
+                    else if (isMidWall) dX = peakVal * scaleM;
+                    else dY = peakVal * scaleM;
+
+                    labelX = tx(peakPt.X) + dX;
+                    labelY = ty(peakPt.Y) + dY;
 
                     // Background pill
                     const label = `${peakVal.toFixed(2)} kN·m`;

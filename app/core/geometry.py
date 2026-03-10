@@ -99,7 +99,7 @@ def generate_box_culvert_members(
     culvert_height: float,
     num_top_strips: int = 10,
     num_wall_strips: int = 8,
-    num_base_strips: int = 10,
+    num_base_strips: int = 41,
     start_number: int = 1001,
     wall_thickness: float = 0.3,
 ) -> list[MemberSegment]:
