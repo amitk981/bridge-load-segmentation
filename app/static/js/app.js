@@ -113,6 +113,142 @@ function generateAutoMembers() {
     onDataChanged('members');
 }
 
+function generateBoxCulvertMembers() {
+    // ── Read all Structure Configuration inputs ──
+    const clearSpan  = parseFloat(document.getElementById('clear-span').value) || 4.0;
+    const numCells   = parseInt(document.getElementById('num-cells').value, 10) || 1;
+    const extWall    = parseFloat(document.getElementById('wall-thickness').value) || 0.3;
+    const intWall    = parseFloat(document.getElementById('mid-wall-thickness').value) || 0.3;
+    let   haunch     = parseFloat(document.getElementById('haunch-size').value) || 0.0;
+    const clearHt    = parseFloat(document.getElementById('culvert-height').value) || 3.0;
+    const topThk     = parseFloat(document.getElementById('slab-thickness').value) || 0.3;
+    const botThk     = parseFloat(document.getElementById('bottom-slab-thickness').value) || 0.35;
+    const startId    = parseInt(document.getElementById('auto-start-id').value) || 1001;
+
+    if (2 * haunch >= clearSpan) haunch = clearSpan / 2.0 - 0.01;
+
+    const tbody = document.getElementById('member-tbody');
+    tbody.innerHTML = '';
+
+    let currentId = startId;
+    const totalWidth = numCells * clearSpan + 2 * extWall + Math.max(0, numCells - 1) * intWall;
+
+    // ────────────────────────────────────────────────────────────
+    // Helper: adds a row to the member table
+    // For horizontal members: start/end = x positions along width
+    // For vertical members:   start/end = y positions along height
+    // ────────────────────────────────────────────────────────────
+    function addRow(startVal, endVal, group, label) {
+        const w = endVal - startVal;
+        if (w <= 0) return;
+        addMemberRowWithData(
+            currentId++,
+            startVal.toFixed(4), endVal.toFixed(4),
+            w.toFixed(4), group, label
+        );
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // 1. TOP SLAB  (horizontal, left-to-right across the width)
+    //    Layout: [ExtWall | Haunch? | Span | Haunch? | IntWall | … | ExtWall]
+    // ══════════════════════════════════════════════════════════════
+    let x = 0;
+    x += extWall;  // skip left wall thickness (wall is a separate vertical member)
+
+    for (let i = 1; i <= numCells; i++) {
+        if (i > 1) x += intWall;  // skip intermediate wall thickness
+        if (haunch > 0) {
+            addRow(x, x + haunch, 'TOP_SLAB', `TS Cell${i} L-Haunch`);
+            x += haunch;
+        }
+        const spanNet = clearSpan - 2 * haunch;
+        addRow(x, x + spanNet, 'TOP_SLAB', `TS Cell${i} Span`);
+        x += spanNet;
+        if (haunch > 0) {
+            addRow(x, x + haunch, 'TOP_SLAB', `TS Cell${i} R-Haunch`);
+            x += haunch;
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // 2. BOTTOM SLAB  (horizontal, same layout as top slab)
+    // ══════════════════════════════════════════════════════════════
+    x = extWall;
+    for (let i = 1; i <= numCells; i++) {
+        if (i > 1) x += intWall;
+        if (haunch > 0) {
+            addRow(x, x + haunch, 'BOTTOM_SLAB', `BS Cell${i} L-Haunch`);
+            x += haunch;
+        }
+        const spanNet = clearSpan - 2 * haunch;
+        addRow(x, x + spanNet, 'BOTTOM_SLAB', `BS Cell${i} Span`);
+        x += spanNet;
+        if (haunch > 0) {
+            addRow(x, x + haunch, 'BOTTOM_SLAB', `BS Cell${i} R-Haunch`);
+            x += haunch;
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // 3. WALLS  (vertical members, start/end = transverse X position)
+    // ══════════════════════════════════════════════════════════════
+    // Let's reset purely for calculating wall positions transversely
+    // Left Wall
+    addRow(0, extWall, 'LEFT_WALL', 'Left Wall');
+
+    // Intermediate Walls
+    x = extWall;
+    for (let i = 1; i < numCells; i++) {
+        x += clearSpan;
+        addRow(x, x + intWall, `MIDDLE_WALL_${i}`, `Mid Wall ${i}`);
+        x += intWall;
+    }
+
+    // Right Wall
+    addRow(totalWidth - extWall, totalWidth, 'RIGHT_WALL', 'Right Wall');
+
+    // ── Update total width and UI state ──
+    document.getElementById('total-width').value = totalWidth.toFixed(4);
+    document.getElementById('culvert-height').value = clearHt;
+
+    // Switch width mode to custom
+    document.getElementById('width-mode').value = 'custom';
+    toggleWidthMode();
+    
+    // Only use TOP_SLAB widths for the custom-widths input array,
+    // otherwise it sums everything (top + bottom + walls) and shows an error.
+    const topSlabRows = Array.from(tbody.querySelectorAll('tr')).filter(row => {
+        const sel = row.querySelector('.m-group');
+        return sel && sel.value === 'TOP_SLAB';
+    });
+    
+    // Fallback: if no TOP_SLAB, use all members
+    const rowsToUse = topSlabRows.length > 0 ? topSlabRows : Array.from(tbody.querySelectorAll('tr'));
+    const widthsList = rowsToUse.map(row => row.querySelector('.m-width').textContent).join(', ');
+    
+    document.getElementById('custom-widths').value = widthsList;
+    updateCustomWidthsFeedback();
+
+    onDataChanged('members');
+}
+
+function syncStructureConfig() {
+    const type = document.getElementById('structure-type').value;
+    const numCellsInput = document.getElementById('num-cells');
+    
+    // Auto-update Number of Cells based on dropdown
+    if (type.startsWith('BOX_CULVERT_')) {
+        const cellsMatch = type.match(/\d+/);
+        if (cellsMatch) {
+            numCellsInput.value = cellsMatch[0];
+            onDataChanged('settings');
+            
+            // Auto-trigger Box Culvert generation to instantly update Geometry tab
+            generateBoxCulvertMembers();
+        }
+    }
+}
+
 function toggleWidthMode() {
     const mode = document.getElementById('width-mode').value;
     document.getElementById('equal-strips-group').style.display = mode === 'equal' ? 'block' : 'none';
@@ -273,10 +409,14 @@ function collectSettings() {
         reference_axis: document.getElementById('reference-axis').value,
         custom_datum: parseFloat(document.getElementById('custom-datum').value) || 0,
         culvert_height: parseFloat(document.getElementById('culvert-height').value),
+        clear_span: parseFloat(document.getElementById('clear-span').value) || 4.0,
+        num_cells: parseInt(document.getElementById('num-cells').value, 10) || 1,
         fill_depth: parseFloat(document.getElementById('fill-depth').value) || 0,
         slab_thickness: parseFloat(document.getElementById('slab-thickness').value),
         bottom_slab_thickness: parseFloat(document.getElementById('bottom-slab-thickness').value),
         wall_thickness: parseFloat(document.getElementById('wall-thickness').value),
+        mid_wall_thickness: parseFloat(document.getElementById('mid-wall-thickness').value) || 0.3,
+        haunch_size: parseFloat(document.getElementById('haunch-size').value) || 0.0,
         decimal_precision: parseInt(document.getElementById('decimal-precision').value, 10),
         units: document.getElementById('units').value,
         overhang_policy: document.getElementById('overhang-policy').value,
@@ -1133,6 +1273,9 @@ function renderLongitudinalSweepViz() {
     const cells = Math.max(1, Number(model.num_cells) || 1);
     const clearSpan = Number(model.clear_span) || (totalLength / cells);
     const clearHeight = Number(model.clear_height) || 3;
+    const topThk = Number(model.top_slab_thickness) || 0.3;
+    const botThk = Number(model.bottom_slab_thickness) || 0.35;
+    const wallThk = Number(model.wall_thickness) || 0.3;
 
     const vehicle = currentSweepResult.vehicles.find(v => v.vehicle_code === vehicleSel.value)
         || currentSweepResult.vehicles[0];
@@ -1155,24 +1298,24 @@ function renderLongitudinalSweepViz() {
 
     const W = rect.width;
     const H = rect.height;
-    const margin = { left: 52, right: 26, top: 56, bottom: 56 };
+    const margin = { left: 60, right: 36, top: 60, bottom: 60 };
     const drawW = Math.max(1, W - margin.left - margin.right);
-    const topY = margin.top + 52;
+    const topY = margin.top + 56;
     const bottomY = H - margin.bottom - 36;
 
     const tx = (x) => margin.left + (x / totalLength) * drawW;
     const ty = (y) => bottomY - (y / clearHeight) * (bottomY - topY);
 
-    // Background
+    // ── Background with gradient ──
     const grad = ctx.createLinearGradient(0, 0, 0, H);
     grad.addColorStop(0, '#111827');
     grad.addColorStop(1, '#0b1220');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
 
-    // Grid
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-    ctx.lineWidth = 1;
+    // ── Grid ──
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 0.5;
     const tickStep = totalLength <= 8 ? 0.5 : totalLength <= 20 ? 1.0 : 2.0;
     for (let x = 0; x <= totalLength + 1e-9; x += tickStep) {
         const px = tx(x);
@@ -1182,31 +1325,164 @@ function renderLongitudinalSweepViz() {
         ctx.stroke();
     }
 
-    // Frame baseline and slabs
+    // ── Draw frame with slab thickness bands ──
+    // Top slab band
+    ctx.fillStyle = 'rgba(34,197,94,0.08)';
+    ctx.fillRect(tx(0), ty(clearHeight), (tx(totalLength) - tx(0)), -(topThk / clearHeight) * (bottomY - topY));
+    // Bottom slab band
+    ctx.fillStyle = 'rgba(34,197,94,0.08)';
+    const botBandH = (botThk / clearHeight) * (bottomY - topY);
+    ctx.fillRect(tx(0), ty(0), (tx(totalLength) - tx(0)), botBandH);
+
+    // Top slab line
     ctx.strokeStyle = '#22c55e';
-    ctx.lineWidth = 2.2;
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.moveTo(tx(0), ty(clearHeight));
     ctx.lineTo(tx(totalLength), ty(clearHeight));
     ctx.stroke();
+
+    // Bottom slab line
     ctx.beginPath();
     ctx.moveTo(tx(0), ty(0));
     ctx.lineTo(tx(totalLength), ty(0));
     ctx.stroke();
 
-    // Vertical walls
+    // ── Vertical walls ──
     for (let i = 0; i <= cells; i++) {
         const x = i * clearSpan;
         const isSide = i === 0 || i === cells;
         ctx.strokeStyle = isSide ? '#22c55e' : '#f97316';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = isSide ? 2.5 : 2;
         ctx.beginPath();
         ctx.moveTo(tx(x), ty(0));
         ctx.lineTo(tx(x), ty(clearHeight));
         ctx.stroke();
     }
 
-    // Highlight selected member group
+    // ── Support triangles at wall bases ──
+    for (let i = 0; i <= cells; i++) {
+        const x = i * clearSpan;
+        const sx = tx(x);
+        const sy = ty(0);
+        const sz = 8;
+
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx - sz, sy + sz * 1.3);
+        ctx.lineTo(sx + sz, sy + sz * 1.3);
+        ctx.closePath();
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+
+        // Ground hatching
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        for (let h = -sz; h <= sz; h += 4) {
+            ctx.moveTo(sx + h, sy + sz * 1.3);
+            ctx.lineTo(sx + h - 4, sy + sz * 1.3 + 5);
+        }
+        ctx.stroke();
+    }
+
+    // ── Joint markers at frame corners ──
+    const jointPositions = [];
+    for (let i = 0; i <= cells; i++) {
+        const x = i * clearSpan;
+        jointPositions.push({ x, y: 0 });
+        jointPositions.push({ x, y: clearHeight });
+    }
+
+    jointPositions.forEach((j, idx) => {
+        ctx.beginPath();
+        ctx.arc(tx(j.x), ty(j.y), 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#0d1117';
+        ctx.fill();
+        ctx.strokeStyle = '#00d4ff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    });
+
+    // ── Cell labels ──
+    ctx.font = '600 11px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    for (let i = 0; i < cells; i++) {
+        const x1 = i * clearSpan;
+        const x2 = (i + 1) * clearSpan;
+        const cx = (x1 + x2) / 2;
+        const cy = clearHeight / 2;
+
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        const rectW = (tx(x2) - tx(x1)) * 0.6;
+        const rectH = 22;
+        ctx.fillRect(tx(cx) - rectW / 2, ty(cy) - rectH / 2, rectW, rectH);
+
+        ctx.fillStyle = '#9ca3af';
+        ctx.fillText(`Cell ${i + 1}`, tx(cx), ty(cy) + 4);
+    }
+
+    // ── Dimension line: clear span ──
+    ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = '#6b7280';
+    ctx.lineWidth = 1;
+    const dimLineY = ty(0) + 40;
+    for (let i = 0; i < cells; i++) {
+        const x1 = tx(i * clearSpan);
+        const x2 = tx((i + 1) * clearSpan);
+
+        ctx.beginPath();
+        ctx.moveTo(x1, dimLineY);
+        ctx.lineTo(x2, dimLineY);
+        ctx.stroke();
+
+        // End ticks
+        ctx.setLineDash([]);
+        [x1, x2].forEach(px => {
+            ctx.beginPath();
+            ctx.moveTo(px, dimLineY - 4);
+            ctx.lineTo(px, dimLineY + 4);
+            ctx.stroke();
+        });
+
+        // Label
+        ctx.font = '600 10px Inter, sans-serif';
+        ctx.fillStyle = '#9ca3af';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${clearSpan.toFixed(2)}m`, (x1 + x2) / 2, dimLineY + 14);
+        ctx.setLineDash([4, 3]);
+    }
+    ctx.setLineDash([]);
+
+    // ── Dimension line: clear height (right side) ──
+    const dimVX = tx(totalLength) + 20;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = '#6b7280';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(dimVX, ty(0));
+    ctx.lineTo(dimVX, ty(clearHeight));
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    [ty(0), ty(clearHeight)].forEach(py => {
+        ctx.beginPath();
+        ctx.moveTo(dimVX - 4, py);
+        ctx.lineTo(dimVX + 4, py);
+        ctx.stroke();
+    });
+
+    ctx.save();
+    ctx.translate(dimVX + 14, (ty(0) + ty(clearHeight)) / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.font = '600 10px Inter, sans-serif';
+    ctx.fillStyle = '#9ca3af';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${clearHeight.toFixed(2)}m`, 0, 0);
+    ctx.restore();
+
+    // ── Highlight selected member group ──
     ctx.strokeStyle = '#22d3ee';
     ctx.lineWidth = 4;
     if (groupData.group === 'TOP_SLAB') {
@@ -1236,7 +1512,7 @@ function renderLongitudinalSweepViz() {
         }
     }
 
-    // Highlight deduced critical member
+    // ── Highlight critical member ──
     const segment = resolveSweepMemberSegment(critical.member_id, model);
     if (segment) {
         ctx.strokeStyle = '#facc15';
@@ -1245,9 +1521,95 @@ function renderLongitudinalSweepViz() {
         ctx.moveTo(tx(segment.x1), ty(segment.y1));
         ctx.lineTo(tx(segment.x2), ty(segment.y2));
         ctx.stroke();
+
+        // Critical member label
+        ctx.font = 'bold 10px JetBrains Mono, monospace';
+        ctx.fillStyle = '#facc15';
+        ctx.textAlign = 'center';
+        const mx = (tx(segment.x1) + tx(segment.x2)) / 2;
+        const my = (ty(segment.y1) + ty(segment.y2)) / 2;
+        ctx.fillText(`M${critical.member_id}`, mx, my - 10);
     }
 
-    // Axle loads at critical lead position
+    // ── Bending Moment Diagram (BMD) ──
+    if (critical.bmd && critical.bmd.length > 0) {
+        let maxM = 0;
+        critical.bmd.forEach(member => {
+            member.points.forEach(pt => {
+                if (Math.abs(pt.M) > maxM) maxM = Math.abs(pt.M);
+            });
+        });
+
+        if (maxM > 0) {
+            const scaleM = 45 / maxM;
+
+            critical.bmd.forEach(member => {
+                const pts = member.points;
+                if (pts.length < 2) return;
+
+                const isVertical = member.group.includes('WALL');
+
+                // Filled BMD polygon
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+                ctx.strokeStyle = '#38bdf8';
+                ctx.lineWidth = 1.5;
+
+                ctx.beginPath();
+                ctx.moveTo(tx(pts[0].X), ty(pts[0].Y));
+
+                let peakPt = pts[0];
+                let peakVal = 0;
+
+                pts.forEach(pt => {
+                    let dX = 0, dY = 0;
+                    if (isVertical) {
+                        dX = pt.M * scaleM;
+                    } else {
+                        dY = pt.M * scaleM;
+                    }
+                    ctx.lineTo(tx(pt.X) + dX, ty(pt.Y) + dY);
+
+                    if (Math.abs(pt.M) > Math.abs(peakVal)) {
+                        peakVal = pt.M;
+                        peakPt = pt;
+                    }
+                });
+
+                ctx.lineTo(tx(pts[pts.length - 1].X), ty(pts[pts.length - 1].Y));
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // ── Peak value label on BMD ──
+                if (Math.abs(peakVal) > 0.01) {
+                    let labelX, labelY;
+                    if (isVertical) {
+                        labelX = tx(peakPt.X) + peakVal * scaleM;
+                        labelY = ty(peakPt.Y);
+                    } else {
+                        labelX = tx(peakPt.X);
+                        labelY = ty(peakPt.Y) + peakVal * scaleM;
+                    }
+
+                    // Background pill
+                    const label = `${peakVal.toFixed(2)} kN·m`;
+                    ctx.font = 'bold 9px JetBrains Mono, monospace';
+                    const tw = ctx.measureText(label).width + 8;
+                    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+                    ctx.fillRect(labelX - tw / 2, labelY - 7, tw, 14);
+                    ctx.strokeStyle = '#38bdf8';
+                    ctx.lineWidth = 0.8;
+                    ctx.strokeRect(labelX - tw / 2, labelY - 7, tw, 14);
+
+                    ctx.fillStyle = '#7dd3fc';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(label, labelX, labelY + 3);
+                }
+            });
+        }
+    }
+
+    // ── Axle loads at critical lead position ──
     const lead = Number(critical.lead_position) || 0;
     const axleOffsets = Array.isArray(vehicle.axle_offsets_m) ? vehicle.axle_offsets_m : [];
     const axleLoads = Array.isArray(vehicle.axle_loads_kN) ? vehicle.axle_loads_kN : [];
@@ -1259,7 +1621,7 @@ function renderLongitudinalSweepViz() {
         const xPos = lead + Number(off || 0);
         if (xPos < 0 || xPos > totalLength) return;
         const px = tx(xPos);
-        const y1 = ty(clearHeight) - 38;
+        const y1 = ty(clearHeight) - 42;
         const y2 = ty(clearHeight) - 6;
 
         ctx.beginPath();
@@ -1273,26 +1635,34 @@ function renderLongitudinalSweepViz() {
         ctx.closePath();
         ctx.fill();
 
-        ctx.font = '600 10px JetBrains Mono, monospace';
+        // Axle load label
+        ctx.font = '600 9px JetBrains Mono, monospace';
         ctx.fillStyle = '#fca5a5';
         ctx.textAlign = 'center';
         ctx.fillText(`${Number(axleLoads[idx] || 0).toFixed(0)}kN`, px, y1 - 4);
         ctx.fillStyle = '#f87171';
     });
 
-    // Lead marker line
+    // ── Lead marker line ──
     if (lead >= 0 && lead <= totalLength) {
         const lx = tx(lead);
-        ctx.strokeStyle = 'rgba(250,204,21,0.8)';
+        ctx.strokeStyle = 'rgba(250,204,21,0.6)';
         ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(lx, margin.top + 14);
         ctx.lineTo(lx, H - margin.bottom + 8);
         ctx.stroke();
         ctx.setLineDash([]);
+
+        // Lead position label
+        ctx.font = '600 9px JetBrains Mono, monospace';
+        ctx.fillStyle = '#facc15';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Lead: ${lead.toFixed(2)}m`, lx, margin.top + 10);
     }
 
-    // Axis and labels
+    // ── Distance axis ──
     ctx.strokeStyle = '#9ca3af';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -1312,15 +1682,44 @@ function renderLongitudinalSweepViz() {
         ctx.fillText(x.toFixed(1), px, H - margin.bottom + 24);
     }
 
-    ctx.font = '600 13px Inter, sans-serif';
+    // ── Axis label ──
+    ctx.font = '400 10px Inter, sans-serif';
+    ctx.fillStyle = '#6b7280';
+    ctx.textAlign = 'center';
+    ctx.fillText('← Longitudinal Distance (m) →', W / 2, H - margin.bottom + 40);
+
+    // ── Title ──
+    ctx.font = '700 14px Inter, sans-serif';
     ctx.fillStyle = '#e5e7eb';
     ctx.textAlign = 'left';
-    ctx.fillText('STAAD-Style Longitudinal Critical Position View', margin.left, 22);
+    ctx.fillText('STAAD-Style Critical Position Diagram', margin.left, 22);
 
     ctx.font = '11px Inter, sans-serif';
     ctx.fillStyle = '#a7b0c2';
-    ctx.fillText(`Increment: ${model.sweep_increment}m  |  Sweep positions: ${vehicle.num_positions}`, margin.left, 40);
+    ctx.fillText(`Increment: ${model.sweep_increment}m  |  Positions: ${vehicle.num_positions}  |  ${cells}-Cell Box Culvert`, margin.left, 40);
 
+    // ── Legend (top right) ──
+    const legend = [
+        { color: '#22c55e', label: 'Frame Members' },
+        { color: '#f97316', label: 'Int. Walls' },
+        { color: '#facc15', label: 'Critical Member' },
+        { color: '#38bdf8', label: 'BMD' },
+        { color: '#f87171', label: 'Axle Loads' },
+    ];
+    ctx.font = '500 9px Inter, sans-serif';
+    let lgX = W - 30;
+    for (let i = legend.length - 1; i >= 0; i--) {
+        const item = legend[i];
+        const lw = ctx.measureText(item.label).width + 18;
+        lgX -= lw;
+        ctx.fillStyle = item.color;
+        ctx.fillRect(lgX, 14, 10, 8);
+        ctx.fillStyle = '#d1d5db';
+        ctx.textAlign = 'left';
+        ctx.fillText(item.label, lgX + 14, 22);
+    }
+
+    // ── Caption ──
     const groupLabel = {
         TOP_SLAB: 'Top Slab',
         BOTTOM_SLAB: 'Bottom Slab',
@@ -1822,11 +2221,37 @@ function bindLiveInputHandlers() {
         settingsPanel.addEventListener('input', (e) => {
             if (e.target && e.target.matches('input, select, textarea')) {
                 onDataChanged('settings');
+                
+                // Auto-sync Box Culvert geometry if a governing input changes
+                const boxInputs = [
+                    'clear-span', 'num-cells', 'wall-thickness', 'mid-wall-thickness',
+                    'haunch-size', 'culvert-height', 'slab-thickness', 'bottom-slab-thickness',
+                    'structure-type'
+                ];
+                if (boxInputs.includes(e.target.id)) {
+                    const stype = document.getElementById('structure-type').value;
+                    if (stype.startsWith('BOX_CULVERT_')) {
+                        generateBoxCulvertMembers();
+                    }
+                }
             }
         });
         settingsPanel.addEventListener('change', (e) => {
             if (e.target && e.target.matches('input, select, textarea')) {
                 onDataChanged('settings');
+                
+                // For dropdowns (structure-type) the change event is key
+                const boxInputs = [
+                    'clear-span', 'num-cells', 'wall-thickness', 'mid-wall-thickness',
+                    'haunch-size', 'culvert-height', 'slab-thickness', 'bottom-slab-thickness',
+                    'structure-type'
+                ];
+                if (boxInputs.includes(e.target.id)) {
+                    const stype = document.getElementById('structure-type').value;
+                    if (stype.startsWith('BOX_CULVERT_')) {
+                        generateBoxCulvertMembers();
+                    }
+                }
             }
         });
     }
@@ -1882,6 +2307,9 @@ document.addEventListener('DOMContentLoaded', () => {
     updateRunReadinessPanel();
 
     window.addEventListener('resize', () => {
+        if (typeof renderGeometry2DCrossSection === 'function') {
+            renderGeometry2DCrossSection();
+        }
         if (currentSweepResult && typeof renderLongitudinalSweepViz === 'function') {
             renderLongitudinalSweepViz();
         }
@@ -1923,6 +2351,128 @@ function loadDefaultLoads() {
     addLoadRowWithData('L2', 'LC1', 'PARTIAL_UDL', '2.10', '5.60', '-18', '', 'GY', 'Patch load 2');
     addLoadRowWithData('L3', 'LC2', 'PARTIAL_UDL', '6.20', '8.10', '-12', '', 'GY', 'Patch load 3');
     onDataChanged('loads');
+}
+
+/**
+ * Load a complete industry-standard 3-cell box culvert sample project.
+ * IRC:6-2017 / IRC:112-2020 compliant design parameters.
+ *
+ * Typical scenario: 3-cell RCC box culvert for a state highway,
+ * 4.5m clear span per cell, 3.5m clear height, 0.6m earth fill.
+ */
+function loadSampleProject3Cell() {
+    // ═══════════════════════════════════════════════════════════════
+    // 1. PROJECT SETTINGS
+    // ═══════════════════════════════════════════════════════════════
+    document.getElementById('project-name').value = 'NH-44 3-Cell Box Culvert';
+    document.getElementById('bridge-name').value = 'Km 142+350 Cross Drainage';
+    document.getElementById('engineer').value = 'Design Engineer';
+    document.getElementById('comments').value = 'IRC:6-2017 loading, IRC:112-2020 design. M35 concrete, Fe500 steel. 0.6m earth fill above top slab.';
+
+    // Structure Configuration — realistic 3-cell box culvert
+    document.getElementById('structure-type').value = 'BOX_CULVERT_3CELL';
+    document.getElementById('num-cells').value = '3';
+    document.getElementById('clear-span').value = '4.5';
+    document.getElementById('culvert-height').value = '3.5';
+    document.getElementById('slab-thickness').value = '0.50';
+    document.getElementById('bottom-slab-thickness').value = '0.55';
+    document.getElementById('wall-thickness').value = '0.45';
+    document.getElementById('mid-wall-thickness').value = '0.30';
+    document.getElementById('haunch-size').value = '0.15';
+    document.getElementById('fill-depth').value = '0.6';
+    document.getElementById('reference-axis').value = 'LEFT_EDGE';
+    document.getElementById('decimal-precision').value = '3';
+    document.getElementById('units').value = 'm';
+
+    onDataChanged('settings');
+
+    // ═══════════════════════════════════════════════════════════════
+    // 2. GEOMETRY — auto-generated from structure config
+    // ═══════════════════════════════════════════════════════════════
+    generateBoxCulvertMembers();
+
+    // ═══════════════════════════════════════════════════════════════
+    // 3. LOADS — IRC standard load cases
+    // ═══════════════════════════════════════════════════════════════
+    const totalW = parseFloat(document.getElementById('total-width').value);
+    const cullH = 3.5;
+    const fillD = 0.6;
+
+    document.getElementById('load-tbody').innerHTML = '';
+
+    // ── LC1: Dead Load (Self Weight) — UDL on top slab ──
+    // Concrete unit weight = 25 kN/m³, slab thickness = 0.50m
+    // DL intensity = 25 × 0.50 = 12.5 kN/m²
+    addLoadRowWithData('L1', 'LC1', 'DEAD_LOAD', '0', totalW, '-12.5', '', 'GY',
+        'Self weight top slab: 25×0.50=12.5 kN/m²');
+
+    // ── LC2: SIDL — Earth fill on top slab ──
+    // Soil unit weight = 20 kN/m³, fill depth = 0.6m
+    // Fill DL = 20 × 0.6 = 12.0 kN/m²
+    addLoadRowWithData('L2', 'LC2', 'DEAD_LOAD', '0', totalW, '-12.0', '', 'GY',
+        'Earth fill: γs=20×H=0.6 = 12.0 kN/m²');
+
+    // ── LC3: SIDL — Wearing course ──
+    // Asphalt unit weight = 22 kN/m³, thickness = 0.075m
+    // WC = 22 × 0.075 = 1.65 kN/m²
+    addLoadRowWithData('L3', 'LC3', 'WEARING_COURSE', '0', totalW, '-1.65', '', 'GY',
+        'WC: γa=22×t=0.075 = 1.65 kN/m²');
+
+    // ── LC4: Earth Pressure on Left Wall ──
+    // K₀ = 0.5, γ = 20 kN/m³, H = 3.5m
+    // EP at top = K₀ × γ × fill = 0.5 × 20 × 0.6 = 6.0 kN/m²
+    // EP at bottom = K₀ × γ × (H + fill) = 0.5 × 20 × 4.1 = 41.0 kN/m²
+    addLoadRowWithData('L4', 'LC4', 'EARTH_PRESSURE', '0', '0.45', '-6.0', '-41.0', 'GX',
+        'EP Left: K₀γ(h), K₀=0.5, γ=20, TRAP');
+
+    // ── LC5: Earth Pressure on Right Wall ──
+    addLoadRowWithData('L5', 'LC5', 'EARTH_PRESSURE', (totalW - 0.45).toFixed(2), totalW, '6.0', '41.0', 'GX',
+        'EP Right: K₀γ(h), K₀=0.5, γ=20, TRAP');
+
+    // ── LC6: Hydrostatic (Water Pressure) on Left Wall ──
+    // γw = 9.81 kN/m³, max height = 2/3 × 3.5 = 2.33m
+    // WP at bottom = 9.81 × 2.33 = 22.86 kN/m²
+    addLoadRowWithData('L6', 'LC6', 'HYDROSTATIC', '0', '0.45', '0.01', '22.86', 'GX',
+        'WP Left: γw×Hw, γw=9.81, Hw=2.33m');
+
+    // ── LC7: Hydrostatic on Right Wall ──
+    addLoadRowWithData('L7', 'LC7', 'HYDROSTATIC', (totalW - 0.45).toFixed(2), totalW, '0.01', '-22.86', 'GX',
+        'WP Right: γw×Hw, γw=9.81, Hw=2.33m');
+
+    // ── LC8: Surcharge on Left Wall (from traffic above) ──
+    // Surcharge = q × K₀ = 24 × 0.5 = 12.0 kN/m² (uniform)
+    addLoadRowWithData('L8', 'LC8', 'SURCHARGE', '0', '0.45', '-12.0', '', 'GX',
+        'Surcharge Left: q×K₀ = 24×0.5 = 12 kN/m²');
+
+    // ── LC9: Surcharge on Right Wall ──
+    addLoadRowWithData('L9', 'LC9', 'SURCHARGE', (totalW - 0.45).toFixed(2), totalW, '12.0', '', 'GX',
+        'Surcharge Right: q×K₀ = 24×0.5 = 12 kN/m²');
+
+    // ── LC10: IRC Class A — Two lane loading (lane 1) ──
+    // IRC Class A: 114 kN axle, 2 wheels × 0.25m contact, CTC 1.8m
+    // Dispersed wheel load on slab (per metre run):
+    // Contact = 0.25 + 2×(0.5+0.6+0.075) = 2.60m dispersed width
+    // Intensity = 57 / 2.60 = 21.92 kN/m per wheel
+    addLoadRowWithData('L10', 'LC10', 'IRC_CLASS_A', '1.35', '3.95', '-21.92', '', 'GY',
+        'IRC Class A Lane 1: 114kN axle dispersed, 0.15m kerb clr');
+
+    // ── LC11: IRC Class A — Two lane loading (lane 2) ──
+    addLoadRowWithData('L11', 'LC11', 'IRC_CLASS_A', '5.85', '8.45', '-21.92', '', 'GY',
+        'IRC Class A Lane 2: 114kN axle dispersed');
+
+    // ── LC12: IRC 70R Tracked — Single lane ──
+    // 700 kN over 4.57m length, 0.84m track width × 2 tracks
+    // CTC = 2.06m, dispersed contact width = 0.84 + 2×(0.5+0.6) = 3.04m
+    // Intensity per track = 350/(4.57×3.04) = 25.19 kN/m²
+    addLoadRowWithData('L12', 'LC12', 'IRC_70R', '3.75', '6.79', '-25.19', '', 'GY',
+        'IRC 70R Tracked: 700kN/4.57m, track dispersed @ 3.04m');
+
+    onDataChanged('loads');
+
+    // Show confirmation
+    notifyUser('✅ Loaded industry-standard 3-cell box culvert sample project with 12 load cases (DL, SIDL, WC, EP, WP, Surcharge, IRC Class A, IRC 70R).', 'success', {
+        hint: 'Navigate to the Results tab and click "Calculate" to analyse.'
+    });
 }
 
 

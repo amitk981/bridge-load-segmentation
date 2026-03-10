@@ -498,6 +498,18 @@ def compute_longitudinal_critical_positions(
         group_results = []
         for group in groups:
             env = envelopes[group]
+            
+            for effect in ["sagging", "hogging", "shear"]:
+                if env[effect]["lead_position"] is not None:
+                    resp = _solve_frame_for_vehicle_position(
+                        model=model,
+                        lead_position=env[effect]["lead_position"],
+                        axle_offsets=axle_offsets,
+                        axle_loads=axle_loads,
+                        compute_bmd=True,
+                    )
+                    env[effect]["bmd"] = resp.get("bmd", [])
+
             group_results.append({
                 "group": group,
                 "max_sagging_moment": env["sagging"],
@@ -675,6 +687,9 @@ def _build_longitudinal_frame_model(
             "T": T,
             "x1": x1,
             "x2": x2,
+            "y1": y1,
+            "y2": y2,
+            "length": math.hypot(x2 - x1, y2 - y1),
         })
 
     # Horizontal members
@@ -733,9 +748,9 @@ def _init_group_envelopes(groups: list[str]) -> dict:
     envelopes = {}
     for g in groups:
         envelopes[g] = {
-            "sagging": {"value": 0.0, "lead_position": 0.0, "member_id": 0},
-            "hogging": {"value": 0.0, "lead_position": 0.0, "member_id": 0},
-            "shear": {"value": 0.0, "lead_position": 0.0, "member_id": 0},
+            "sagging": {"value": 0.0, "lead_position": None, "member_id": 0},
+            "hogging": {"value": 0.0, "lead_position": None, "member_id": 0},
+            "shear": {"value": 0.0, "lead_position": None, "member_id": 0},
         }
     return envelopes
 
@@ -784,6 +799,7 @@ def _solve_frame_for_vehicle_position(
     lead_position: float,
     axle_offsets: list[float],
     axle_loads: list[float],
+    compute_bmd: bool = False,
 ) -> dict:
     n_dof = model["n_dof"]
     F_global = np.zeros(n_dof, dtype=float)
@@ -868,7 +884,51 @@ def _solve_frame_for_vehicle_position(
         group_forces[g]["shears"].append((abs(V1), elem["id"]))
         group_forces[g]["shears"].append((abs(V2), elem["id"]))
 
-    return {"group_forces": group_forces}
+        if compute_bmd:
+            L = elem["length"]
+            x1, y1 = elem["x1"], elem["y1"]
+            x2, y2 = elem["x2"], elem["y2"]
+            
+            element_loads = []
+            if g == "TOP_SLAB":
+                for offset, load_kN in zip(axle_offsets, axle_loads):
+                    x_global = lead_position + offset
+                    if min(x1, x2) <= x_global <= max(x1, x2):
+                        dist = abs(x_global - x1)
+                        if dist < 1e-6: dist = 0.0
+                        if dist > L - 1e-6: dist = L
+                        # For downward loads, local y force is negative
+                        element_loads.append({"a": dist, "P": -abs(load_kN)})
+            
+            samples = {float(d) for d in np.linspace(0, L, 11)}
+            for ld in element_loads:
+                samples.add(float(ld["a"]))
+            samples = sorted(list(samples))
+            
+            elem_bmd = []
+            for a in samples:
+                # M_int = V1*a - M1 + sum(P * (a - a_i))
+                M_int = V1 * a - M1
+                for ld in element_loads:
+                    if ld["a"] < a:
+                        M_int += ld["P"] * (a - ld["a"])
+                
+                X = x1 + (x2 - x1) * (a / L) if L > 0 else x1
+                Y = y1 + (y2 - y1) * (a / L) if L > 0 else y1
+                elem_bmd.append({"X": X, "Y": Y, "M": round(M_int, 3)})
+            
+            if "bmd_data" not in locals():
+                bmd_data = []
+            bmd_data.append({
+                "member_id": elem["id"],
+                "group": g,
+                "points": elem_bmd,
+            })
+
+    result = {"group_forces": group_forces}
+    if compute_bmd:
+        result["bmd"] = locals().get("bmd_data", [])
+    return result
 
 
 # ─── 4. Effective Width / Load Dispersion (IRC 112) ─────────────────────────

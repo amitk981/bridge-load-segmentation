@@ -24,11 +24,6 @@ function renderResultsFrameViz() {
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
-    const W = rect.width;
-    const H = rect.height;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Colors & Theme
@@ -61,14 +56,15 @@ function renderResultsFrameViz() {
     };
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Layout
+    // Layout — dynamically calculate required height based on content
     // ─────────────────────────────────────────────────────────────────────────
     const totalWidth = settings.total_width || 8.5;
     const margin = { top: 100, right: 50, bottom: 85, left: 70 };
-    const drawW = W - margin.left - margin.right;
+    const drawW = rect.width - margin.left - margin.right;
     const scale = drawW / totalWidth;
 
-    const loadZoneH = Math.max(90, loads.length * 30 + 10);
+    const loadBarH = Math.min(26, 200 / Math.max(loads.length, 1));
+    const loadZoneH = Math.max(90, loads.length * (loadBarH + 4) + 10);
     const gapAfterLoads = 25;
     const memberZoneH = 80;
     const gapAfterMembers = 18;
@@ -78,6 +74,19 @@ function renderResultsFrameViz() {
     const memberY = loadY + loadZoneH + gapAfterLoads;
     const d1d2Y = memberY + memberZoneH + gapAfterMembers;
     const axisY = d1d2Y + d1d2ZoneH + 15;
+
+    // Dynamic canvas height — resize if content needs more space
+    const requiredH = axisY + 50;
+    const canvasStyleH = Math.max(440, requiredH);
+    canvas.style.height = canvasStyleH + 'px';
+
+    // Re-read rect after style change
+    const finalRect = canvas.getBoundingClientRect();
+    canvas.width = finalRect.width * dpr;
+    canvas.height = finalRect.height * dpr;
+    ctx.scale(dpr, dpr);
+    const W = finalRect.width;
+    const H = finalRect.height;
 
     function tx(x) { return margin.left + x * scale; }
 
@@ -221,7 +230,7 @@ function renderResultsFrameViz() {
     // ─────────────────────────────────────────────────────────────────────────
     // LOADS — Gradient Bars with Pressure Arrows
     // ─────────────────────────────────────────────────────────────────────────
-    const loadBarH = Math.min(26, (loadZoneH - 10) / Math.max(loads.length, 1));
+
 
     loads.forEach((lo, i) => {
         const x1 = tx(Math.max(0, lo.start));

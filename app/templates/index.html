@@ -1304,6 +1304,11 @@
                     <h2 class="card-title">Project Information</h2>
                     <p class="helper-text">These details appear on the cover sheet of the Excel export and serve as
                         project traceability for checking/approval.</p>
+                    <div style="margin-bottom:12px">
+                        <button class="btn btn-sm btn-primary" onclick="loadSampleProject3Cell()" title="Pre-fill all tabs with a realistic 3-cell box culvert example including IRC loads">
+                            🧪 Load Sample Project (3-Cell Box Culvert)
+                        </button>
+                    </div>
                     <div class="form-grid">
                         <div class="form-group">
                             <label>Project Name</label>
@@ -1339,7 +1344,7 @@
                     <div class="form-grid">
                         <div class="form-group">
                             <label>Structure Type</label>
-                            <select id="structure-type">
+                            <select id="structure-type" onchange="syncStructureConfig()">
                                 <option value="BRIDGE_DECK">Bridge Deck</option>
                                 <option value="BOX_CULVERT_1CELL">Box Culvert — 1 Cell</option>
                                 <option value="BOX_CULVERT_2CELL">Box Culvert — 2 Cells</option>
@@ -1374,6 +1379,16 @@
                             <span class="field-hint">Wall height — used for EP/WP templates</span>
                         </div>
                         <div class="form-group">
+                            <label>Clear Span of Cell (m)</label>
+                            <input type="number" id="clear-span" value="4.0" step="0.01" min="0.5">
+                            <span class="field-hint">For box culvert generation</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Number of Cells</label>
+                            <input type="number" id="num-cells" value="1" min="1" max="10">
+                            <span class="field-hint">Required for box culvert model</span>
+                        </div>
+                        <div class="form-group">
                             <label>Top Slab Thickness (m)</label>
                             <input type="number" id="slab-thickness" value="0.30" step="0.01" min="0.01">
                             <span class="field-hint">Required for longitudinal sweep stiffness model</span>
@@ -1384,9 +1399,19 @@
                             <span class="field-hint">Required for realistic sweep stiffness and design output reporting</span>
                         </div>
                         <div class="form-group">
-                            <label>Wall Thickness (m)</label>
+                            <label>Ext Wall Thickness (m)</label>
                             <input type="number" id="wall-thickness" value="0.30" step="0.01" min="0.01">
                             <span class="field-hint">Required for longitudinal sweep and multi-cell geometry</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Int Wall Thickness (m)</label>
+                            <input type="number" id="mid-wall-thickness" value="0.30" step="0.01" min="0.01">
+                            <span class="field-hint">Intermediate vertical wall thickness</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Haunch Size (m)</label>
+                            <input type="number" id="haunch-size" value="0.15" step="0.01" min="0.0">
+                            <span class="field-hint">Corner fillet size</span>
                         </div>
                         <div class="form-group">
                             <label>Fill Depth (m)</label>
@@ -1487,8 +1512,12 @@
                         </span>
                         <div id="custom-widths-feedback" style="margin-top:6px;font-size:12px"></div>
                     </div>
-                    <button class="btn btn-primary" onclick="generateAutoMembers()" style="margin-top:12px">Generate
-                        Members</button>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn btn-primary" onclick="generateAutoMembers()" style="margin-top:12px">Generate
+                            Deck Strips</button>
+                        <button class="btn btn-accent" onclick="generateBoxCulvertMembers()" style="margin-top:12px">Generate
+                            Box Culvert</button>
+                    </div>
                 </div>
 
                 <!-- Manual Mode -->
@@ -1554,8 +1583,15 @@
                 <h2 class="card-title">Bridge Width Diagram</h2>
                 <p class="helper-text">Visual check — each coloured block represents one STAAD member strip. Verify that
                     strips cover the full bridge width without gaps.</p>
-                <div id="visualization-container">
-                    <svg id="bridge-svg" width="100%" height="200"></svg>
+                <div id="visualization-container" style="display:flex; flex-direction:column; gap:20px;">
+                    <div>
+                        <h4 style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">1D STAAD Member Strip Mapping</h4>
+                        <svg id="bridge-svg" width="100%" height="200"></svg>
+                    </div>
+                    <div id="geometry-2d-frame-container" style="display:none; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px;">
+                        <h4 style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">Physical Structural Cross-Section</h4>
+                        <canvas id="geometry-2d-canvas" style="width:100%; height:300px; display:block;"></canvas>
+                    </div>
                 </div>
             </div>
         </section>

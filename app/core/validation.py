@@ -33,37 +33,45 @@ def validate_members(
         ))
         return messages
 
-    # Sort by start position for boundary checks
-    sorted_members = sorted(members, key=lambda m: m.start)
+    # Group members by their structural group to avoid false positive overlap
+    # errors between slabs and vertical walls which share the same X coordinates.
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for m in members:
+        groups[m.group].append(m)
 
-    for i, m in enumerate(sorted_members):
-        if m.end <= m.start:
-            messages.append(ValidationMessage(
-                level="error", field=f"member_{m.id}",
-                message=f"Member {m.id}: end ({m.end}) must be > start ({m.start})"
-            ))
+    for group_name, group_members in groups.items():
+        # Sort by start position for boundary checks within this group
+        sorted_members = sorted(group_members, key=lambda m: m.start)
 
-        if m.start < -1e-9:
-            messages.append(ValidationMessage(
-                level="warning", field=f"member_{m.id}",
-                message=f"Member {m.id}: start ({m.start}) is before origin (0)"
-            ))
-
-        if m.end > total_width + 1e-9:
-            messages.append(ValidationMessage(
-                level="warning", field=f"member_{m.id}",
-                message=f"Member {m.id}: end ({m.end}) exceeds total width ({total_width})"
-            ))
-
-        # Check overlap with previous member
-        if i > 0:
-            prev = sorted_members[i - 1]
-            if m.start < prev.end - 1e-9:
+        for i, m in enumerate(sorted_members):
+            if m.end <= m.start:
                 messages.append(ValidationMessage(
                     level="error", field=f"member_{m.id}",
-                    message=f"Member {m.id} overlaps with member {prev.id}: "
-                            f"{m.id} starts at {m.start} but {prev.id} ends at {prev.end}"
+                    message=f"Member {m.id} ({m.group}): end ({m.end}) must be > start ({m.start})"
                 ))
+
+            if m.start < -1e-9:
+                messages.append(ValidationMessage(
+                    level="warning", field=f"member_{m.id}",
+                    message=f"Member {m.id} ({m.group}): start ({m.start}) is before origin (0)"
+                ))
+
+            if m.end > total_width + 1e-9:
+                messages.append(ValidationMessage(
+                    level="warning", field=f"member_{m.id}",
+                    message=f"Member {m.id} ({m.group}): end ({m.end}) exceeds total width ({total_width})"
+                ))
+
+            # Check overlap with previous member in the SAME group
+            if i > 0:
+                prev = sorted_members[i - 1]
+                if m.start < prev.end - 1e-9:
+                    messages.append(ValidationMessage(
+                        level="error", field=f"member_{m.id}",
+                        message=f"Member {m.id} ({m.group}) overlaps with member {prev.id}: "
+                                f"{m.id} starts at {m.start} but {prev.id} ends at {prev.end}"
+                    ))
 
     return messages
 
@@ -98,7 +106,7 @@ def validate_loads(
                 message=f"Load {load.id}: end ({load.end}) must be > start ({load.start})"
             ))
 
-        if load.intensity == 0:
+        if load.intensity == 0 and (load.intensity_end is None or load.intensity_end == 0):
             messages.append(ValidationMessage(
                 level="warning", field=f"load_{load.id}",
                 message=f"Load {load.id}: intensity is zero"
