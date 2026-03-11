@@ -43,7 +43,7 @@ function updateVisualization() {
     const totalWidth = parseFloat(document.getElementById('total-width').value) || 8.5;
     const containerWidth = svg.parentElement.clientWidth - 32;
     const svgWidth = Math.max(containerWidth, 600);
-    const padding = { left: 50, right: 30, top: 20, bottom: 40 };
+    const padding = { left: 70, right: 30, top: 20, bottom: 40 };
     const drawWidth = svgWidth - padding.left - padding.right;
     const memberHeight = 56;
     const loadHeight = 18;
@@ -497,8 +497,11 @@ function renderGeometry2DCrossSection() {
         ctx.textBaseline = 'middle';
         
         members.forEach((m, i) => {
-            const startX = m.start * scale;
-            const endX = m.end * scale;
+            const userTotalW = parseFloat(document.getElementById('total-width')?.value) || physicalWidth;
+            const memberScaleX = userTotalW > 0 ? (physicalWidth * scale) / userTotalW : scale;
+            
+            const startX = m.start * memberScaleX;
+            const endX = m.end * memberScaleX;
             const midX = (startX + endX) / 2;
             const len = endX - startX;
             
@@ -593,7 +596,7 @@ function updateResultsVisualization() {
 
     const containerWidth = svg.parentElement.clientWidth - 32;
     const svgWidth = Math.max(containerWidth, 600);
-    const padding = { left: 50, right: 30, top: 20, bottom: 40 };
+    const padding = { left: 70, right: 30, top: 20, bottom: 40 };
     const drawWidth = svgWidth - padding.left - padding.right;
     const memberHeight = 45;
     const loadHeight = 25;

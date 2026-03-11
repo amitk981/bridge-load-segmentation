@@ -2959,37 +2959,45 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
                 <p style="margin: 0; opacity: 0.8; font-size: 0.95rem;">Enter 18 core parameters. Automatically generate all IRC load cases, combinations, design checks, quantities, BBS, and diagrams.</p>
             </div>
 
-            <div style="display: grid; grid-template-columns: 350px 1fr; gap: 24px; align-items: start;">
+            <div style="display: grid; grid-template-columns: 420px 1fr; gap: 24px; align-items: start;">
                 <!-- Left Sidebar: The 18 Inputs -->
-                <div class="input-sidebar" style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px;">
+                <div class="input-sidebar" style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.03);">
                     
-                    <h3 style="margin-top:0; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 16px;">1. Geometry</h3>
-                    <div class="form-group"><label>Cells</label><select id="ad-cells"><option>1</option><option>2</option><option>3</option><option>4</option></select></div>
-                    <div class="form-group"><label>Clear Span (m)</label><input type="number" id="ad-span" value="4.0" step="0.1"></div>
-                    <div class="form-group"><label>Clear Height (m)</label><input type="number" id="ad-height" value="3.0" step="0.1"></div>
-                    <div class="form-group"><label>Top Slab Thk (m)</label><input type="number" id="ad-top" value="0.30" step="0.05"></div>
-                    <div class="form-group"><label>Bot Slab Thk (m)</label><input type="number" id="ad-bot" value="0.35" step="0.05"></div>
-                    <div class="form-group"><label>Outer Wall (m)</label><input type="number" id="ad-wall" value="0.30" step="0.05"></div>
-                    <div class="form-group"><label>Mid Wall (m)</label><input type="number" id="ad-midwall" value="0.30" step="0.05"></div>
-                    <div class="form-group"><label>Haunch (m)</label><input type="number" id="ad-haunch" value="0.15" step="0.05"></div>
+                    <h3 style="margin-top:0; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 16px; font-size: 1rem; color: var(--primary); display: flex; align-items: center; gap: 8px;"><svg style="width:16px; height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg> 1. Geometry</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px;">
+                        <div class="form-group" style="margin: 0;"><label>Cells</label><select id="ad-cells" style="width: 100%;"><option>1</option><option>2</option><option>3</option><option>4</option></select></div>
+                        <div class="form-group" style="margin: 0;"><label>Clear Span (m)</label><input type="number" id="ad-span" value="4.0" step="0.1" style="width: 100%;"></div>
+                        <div class="form-group" style="margin: 0;"><label>Clear Height (m)</label><input type="number" id="ad-height" value="3.0" step="0.1" style="width: 100%;"></div>
+                        <div class="form-group" style="margin: 0;"><label>Top Slab Thk (m)</label><input type="number" id="ad-top" value="0.30" step="0.05" style="width: 100%;"></div>
+                        <div class="form-group" style="margin: 0;"><label>Bot Slab Thk (m)</label><input type="number" id="ad-bot" value="0.35" step="0.05" style="width: 100%;"></div>
+                        <div class="form-group" style="margin: 0;"><label>Outer Wall (m)</label><input type="number" id="ad-wall" value="0.30" step="0.05" style="width: 100%;"></div>
+                        <div class="form-group" style="margin: 0;"><label>Mid Wall (m)</label><input type="number" id="ad-midwall" value="0.30" step="0.05" style="width: 100%;"></div>
+                        <div class="form-group" style="margin: 0;"><label>Haunch (m)</label><input type="number" id="ad-haunch" value="0.15" step="0.05" style="width: 100%;"></div>
+                    </div>
 
-                    <h3 style="margin-top:24px; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 16px;">2. Material</h3>
-                    <div class="form-group"><label>fck (MPa)</label><select id="ad-fck"><option>25</option><option selected>30</option><option>35</option><option>40</option></select></div>
-                    <div class="form-group"><label>fy (MPa)</label><select id="ad-fy"><option>415</option><option selected>500</option><option>550</option></select></div>
-                    <div class="form-group"><label>Clear Cover (mm)</label><input type="number" id="ad-cover" value="50" step="5"></div>
+                    <h3 style="margin-top:0; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 16px; font-size: 1rem; color: var(--primary); display: flex; align-items: center; gap: 8px;"><svg style="width:16px; height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg> 2. Material</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px;">
+                        <div class="form-group" style="margin: 0;"><label>fck (MPa)</label><select id="ad-fck" style="width: 100%;"><option>25</option><option selected>30</option><option>35</option><option>40</option></select></div>
+                        <div class="form-group" style="margin: 0;"><label>fy (MPa)</label><select id="ad-fy" style="width: 100%;"><option>415</option><option selected>500</option><option>550</option></select></div>
+                        <div class="form-group" style="margin: 0;"><label>Clear Cover (mm)</label><input type="number" id="ad-cover" value="50" step="5" style="width: 100%;"></div>
+                    </div>
 
-                    <h3 style="margin-top:24px; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 16px;">3. Site & Soil</h3>
-                    <div class="form-group"><label>Fill Depth (m)</label><input type="number" id="ad-fill" value="0.6" step="0.1"></div>
-                    <div class="form-group"><label>Wearing Course (m)</label><input type="number" id="ad-wc" value="0.075" step="0.005"></div>
-                    <div class="form-group"><label>Soil γ (kN/m³)</label><input type="number" id="ad-gamma" value="18.0" step="0.5"></div>
-                    <div class="form-group"><label>Friction Angle (°)</label><input type="number" id="ad-phi" value="30" step="1"></div>
-                    <div class="form-group"><label>Allowable SBC (kN/m²)</label><input type="number" id="ad-sbc" value="150" step="10"></div>
+                    <h3 style="margin-top:0; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 16px; font-size: 1rem; color: var(--primary); display: flex; align-items: center; gap: 8px;"><svg style="width:16px; height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> 3. Site & Soil</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px;">
+                        <div class="form-group" style="margin: 0;"><label>Fill Depth (m)</label><input type="number" id="ad-fill" value="0.6" step="0.1" style="width: 100%;"></div>
+                        <div class="form-group" style="margin: 0;"><label>Wearing Course (m)</label><input type="number" id="ad-wc" value="0.075" step="0.005" style="width: 100%;"></div>
+                        <div class="form-group" style="margin: 0;"><label>Soil γ (kN/m³)</label><input type="number" id="ad-gamma" value="18.0" step="0.5" style="width: 100%;"></div>
+                        <div class="form-group" style="margin: 0;"><label>Friction Angle (°)</label><input type="number" id="ad-phi" value="30" step="1" style="width: 100%;"></div>
+                        <div class="form-group" style="margin: 0; grid-column: span 2;"><label>Allowable SBC (kN/m²)</label><input type="number" id="ad-sbc" value="150" step="10" style="width: 100%;"></div>
+                    </div>
 
-                    <h3 style="margin-top:24px; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 16px;">4. Hydraulic</h3>
-                    <div class="form-group"><label>Water Table Depth (m)</label><input type="number" id="ad-water" value="0.0" step="0.1" title="Below bottom slab"></div>
-                    <div class="form-group"><label>Analysis Length (m)</label><input type="number" id="ad-length" value="10.0" step="1.0"></div>
+                    <h3 style="margin-top:0; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 16px; font-size: 1rem; color: var(--primary); display: flex; align-items: center; gap: 8px;"><svg style="width:16px; height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg> 4. Hydraulic</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group" style="margin: 0;"><label>Water Table (m)</label><input type="number" id="ad-water" value="0.0" step="0.1" title="Below bottom slab" style="width: 100%;"></div>
+                        <div class="form-group" style="margin: 0;"><label>Analysis Length (m)</label><input type="number" id="ad-length" value="10.0" step="1.0" style="width: 100%;"></div>
+                    </div>
 
-                    <button class="btn btn-primary" onclick="runAutoDesign()" style="width: 100%; margin-top: 32px; padding: 16px; font-size: 1.1rem; background: linear-gradient(135deg, #10b981, #059669); font-weight: bold; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                    <button class="btn btn-primary" onclick="runAutoDesign()" style="width: 100%; margin-top: 32px; padding: 16px; font-size: 1.1rem; background: linear-gradient(135deg, #10b981, #059669); font-weight: bold; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); border-radius: 8px; transition: transform 0.2s, box-shadow 0.2s;">
                         ⚡ Run Complete Design
                     </button>
                 </div>
@@ -3004,12 +3012,31 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
 
                     <!-- Tabs for different diagrams -->
                     <div class="card" style="padding: 0;">
-                        <nav class="diagram-nav" style="display: flex; border-bottom: 1px solid var(--border); background: var(--surface);">
-                            <button class="tab-btn active" style="padding: 12px 20px; border: none; background: transparent; cursor: pointer; border-bottom: 2px solid var(--primary); font-weight: 500;" onclick="switchAdTab('ad-tab-geometry')">Geometry & Loads</button>
-                            <button class="tab-btn" style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;" onclick="switchAdTab('ad-tab-sfd')">BMD/SFD Envelopes</button>
-                            <button class="tab-btn" style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;" onclick="switchAdTab('ad-tab-pressure')">Base Pressure</button>
-                            <button class="tab-btn" style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;" onclick="switchAdTab('ad-tab-rebar')">Reinforcement</button>
-                            <button class="tab-btn" style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;" onclick="switchAdTab('ad-tab-report')">Detailed Report</button>
+                        <style>
+                            .premium-tab {
+                                padding: 14px 24px; border: none; background: transparent; cursor: pointer;
+                                display: flex; align-items: center; gap: 8px; font-size: 0.95rem; color: var(--text-secondary);
+                                transition: all 0.2s ease; border-bottom: 2px solid transparent; position: relative;
+                            }
+                            .premium-tab:hover { color: var(--primary); background: rgba(var(--primary-rgb), 0.05); }
+                            .premium-tab.active { color: var(--primary); background: rgba(var(--primary-rgb), 0.08); }
+                        </style>
+                        <nav class="diagram-nav" style="display: flex; border-bottom: 1px solid var(--border); background: var(--surface); overflow-x: auto; border-top-left-radius: 12px; border-top-right-radius: 12px;">
+                            <button class="tab-btn premium-tab active" style="border-bottom: 2px solid var(--primary); font-weight: 600;" onclick="switchAdTab('ad-tab-geometry')">
+                                <svg style="width:18px;height:18px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg> Geometry & Loads
+                            </button>
+                            <button class="tab-btn premium-tab" onclick="switchAdTab('ad-tab-sfd')">
+                                <svg style="width:18px;height:18px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg> BMD/SFD Envelopes
+                            </button>
+                            <button class="tab-btn premium-tab" onclick="switchAdTab('ad-tab-pressure')">
+                                <svg style="width:18px;height:18px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg> Base Pressure
+                            </button>
+                            <button class="tab-btn premium-tab" onclick="switchAdTab('ad-tab-rebar')">
+                                <svg style="width:18px;height:18px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"></path></svg> Reinforcement
+                            </button>
+                            <button class="tab-btn premium-tab" onclick="switchAdTab('ad-tab-report')">
+                                <svg style="width:18px;height:18px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> Detailed Report
+                            </button>
                         </nav>
                         
                         <div class="diagram-content" style="padding: 24px;">
@@ -3034,10 +3061,24 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
                 </div>
                 
                 <!-- Loading State -->
-                <div id="ad-loading" style="display: none; padding: 60px; text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: 12px;">
-                    <div style="font-size: 3rem; margin-bottom: 16px; animation: spin 2s linear infinite;">⚙️</div>
-                    <h2 style="margin:0 0 8px 0;">Running Engine Pipeline...</h2>
-                    <p style="opacity:0.7; max-width: 400px; margin: 0 auto; line-height: 1.6;">Generating 10 load cases, running vehicle sweeps, computing impact factors, designing flexure & shear reinforcements, estimating quantities, and generating diagrams.</p>
+                <style>
+                    @keyframes pulseGlow {
+                        0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+                        70% { box-shadow: 0 0 0 20px rgba(16, 185, 129, 0); }
+                        100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+                    }
+                    @keyframes spinSlow { 100% { transform: rotate(360deg); } }
+                </style>
+                <div id="ad-loading" style="display: none; padding: 80px 40px; text-align: center; background: linear-gradient(180deg, var(--surface) 0%, rgba(var(--primary-rgb), 0.02) 100%); border: 1px solid var(--border); border-radius: 12px; position: relative; overflow: hidden;">
+                    <!-- Ambient Background Glow -->
+                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; background: radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, transparent 70%); border-radius: 50%; pointer-events: none;"></div>
+                    
+                    <div style="display: inline-flex; justify-content: center; align-items: center; width: 64px; height: 64px; border-radius: 50%; background: rgba(16, 185, 129, 0.1); color: #10b981; margin-bottom: 24px; animation: pulseGlow 2s infinite;">
+                        <svg style="width: 32px; height: 32px; animation: spinSlow 3s linear infinite;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </div>
+                    
+                    <h2 style="margin:0 0 12px 0; font-size: 1.5rem; color: var(--text-primary); position: relative; z-index: 1;">Running Auto-Design Engine</h2>
+                    <p style="opacity:0.7; max-width: 480px; margin: 0 auto; line-height: 1.6; font-size: 0.95rem; color: var(--text-secondary); position: relative; z-index: 1;">Orchestrating mathematical models, structural analysis via 10+ IRC load combinations, vehicle sweeps, flexural/shear sizing, and generating technical design drawings...</p>
                 </div>
 
             </div>

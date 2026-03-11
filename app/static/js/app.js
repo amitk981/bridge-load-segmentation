@@ -681,7 +681,17 @@ function importJointCoordinates() {
     }
 
     const tol = 1e-4;
-    const xs = uniqueSorted(parsed.xs, tol);
+    // Separate by Y-level if possible to avoid super-meshing top and bottom slabs
+    let xs = uniqueSorted(parsed.xs, tol);
+    
+    if (parsed.ys.length > 0) {
+        const maxY = Math.max(...parsed.ys);
+        const topXs = uniqueSorted(parsed.joints.filter(j => approxEqual(j.y, maxY, 0.1)).map(j => j.x), tol);
+        if (topXs.length >= 2) {
+            xs = topXs; // Favor the top slab mesh for generic transverse members
+        }
+    }
+
     if (xs.length < 2) {
         notifyUser('Not enough distinct X positions to build members.', 'error');
         return;
@@ -850,6 +860,7 @@ function importJointCoordinates() {
 function parseJointCoordinates(raw) {
     const xs = [];
     const ys = [];
+    const joints = [];
     const lines = String(raw || '').split(/\r?\n/);
     lines.forEach(line => {
         const nums = line.match(/-?\d*\.?\d+(?:[eE][+-]?\d+)?/g);
@@ -864,10 +875,13 @@ function parseJointCoordinates(raw) {
             x = vals[0];
             y = vals[1];
         }
-        if (Number.isFinite(x)) xs.push(x);
-        if (Number.isFinite(y)) ys.push(y);
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+            xs.push(x);
+            ys.push(y);
+            joints.push({x, y});
+        }
     });
-    return { xs, ys };
+    return { xs, ys, joints };
 }
 
 function parseNumericList(raw) {
@@ -3878,7 +3892,7 @@ function switchAdTab(tabId) {
     document.querySelectorAll('#tab-auto-design .diagram-content > div').forEach(div => div.style.display = 'none');
     document.querySelectorAll('#tab-auto-design .diagram-nav .tab-btn').forEach(btn => {
         btn.classList.remove('active');
-        btn.style.borderBottom = 'none';
+        btn.style.borderBottom = '2px solid transparent';
         btn.style.fontWeight = 'normal';
     });
     
@@ -3888,7 +3902,7 @@ function switchAdTab(tabId) {
     if (activeBtn) {
         activeBtn.classList.add('active');
         activeBtn.style.borderBottom = '2px solid var(--primary)';
-        activeBtn.style.fontWeight = '500';
+        activeBtn.style.fontWeight = '600';
     }
 }
 
@@ -3935,25 +3949,134 @@ async function runAutoDesign() {
         
         const result = data.result;
         
-        // Render Raw JSON Report
-        document.getElementById('ad-raw-json').textContent = JSON.stringify(result, null, 2);
+        // Render Detailed HTML Table Report
+        renderDetailedReportTable(result);
         
         // Build Traffic Light Summary Cards
         renderDesignDashboardSummary(result);
         
-        // Trigger Diagrams in design_diagrams.js
-        if (typeof window.renderAutoDesignDiagrams === 'function') {
-            window.renderAutoDesignDiagrams(result, payload);
-        }
-
-        // Show results
+        // Show results so canvas elements have non-zero dimensions
         loadingEl.style.display = 'none';
         dashboardEl.style.display = 'block';
+        
+        // Trigger Diagrams in design_diagrams.js
+        if (typeof window.renderAutoDesignDiagrams === 'function') {
+            // Slight delay sometimes helps if the browser hasn't painted yet, but directly should usually work
+            setTimeout(() => window.renderAutoDesignDiagrams(result, payload), 50);
+        }
         
     } catch (e) {
         loadingEl.style.display = 'none';
         notifyUser('Auto Design Error: ' + e.message, 'error');
     }
+}
+
+function renderDetailedReportTable(res) {
+    const container = document.getElementById('ad-raw-json');
+    if (!container) return;
+    
+    // Clear out any `<pre>` behavior if the element itself is a pre, or just set innerHTML
+    container.style.whiteSpace = 'normal';
+    container.style.overflowX = 'auto';
+    container.style.backgroundColor = 'transparent';
+    container.style.padding = '0';
+    
+    let html = `
+    <div style="background: var(--surface); border-radius: 8px; border: 1px solid var(--border); overflow: hidden;">
+        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+            <thead>
+                <tr style="background: rgba(0,0,0,0.2); border-bottom: 2px solid var(--border);">
+                    <th style="padding: 12px 16px; font-weight: 600; color: var(--text-muted); width: 30%;">Category / Parameter</th>
+                    <th style="padding: 12px 16px; font-weight: 600; color: var(--text-muted);">Value / Status</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    // Helper to format values
+    const formatValue = (val) => {
+        if (typeof val === 'number') return val.toFixed(3).replace(/\.?0+$/, '');
+        if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+        if (typeof val === 'string') {
+            if (val === 'PASS') return '<span style="color: #10b981; font-weight: bold;">PASS</span>';
+            if (val === 'FAIL') return '<span style="color: #ef4444; font-weight: bold;">FAIL</span>';
+            return val;
+        }
+        return val;
+    };
+    
+    // Helper to render a section
+    const renderSection = (title, obj) => {
+        if (!obj) return '';
+        let sectionHtml = `
+            <tr style="background: rgba(255,255,255,0.02); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+                <td colspan="2" style="padding: 12px 16px; font-weight: bold; color: var(--primary); font-size: 1rem; text-transform: uppercase;">
+                    ${title}
+                </td>
+            </tr>
+        `;
+        
+        for (const [key, value] of Object.entries(obj)) {
+            // Skip deeply nested objects for simple table, or format them flat
+            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                // Flatten one level deep for things like top_slab_hog
+                if (value.status || value.provided_ast || value.ratio) {
+                    const subText = Object.entries(value)
+                        .filter(([k,v]) => k !== 'status')
+                        .map(([k,v]) => `${k.replace(/_/g, ' ')}: ${formatValue(v)}`)
+                        .join(', ');
+                        
+                    sectionHtml += `
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <td style="padding: 10px 16px; color: var(--text-secondary); padding-left: 24px;">${key.replace(/_/g, ' ').toUpperCase()}</td>
+                            <td style="padding: 10px 16px;">
+                                <div style="margin-bottom: 4px;">Status: ${formatValue(value.status)}</div>
+                                <div style="font-size: 0.8rem; opacity: 0.7;">${subText}</div>
+                            </td>
+                        </tr>
+                    `;
+                } else {
+                     sectionHtml += `
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <td style="padding: 10px 16px; color: var(--text-secondary); padding-left: 24px;">${key.replace(/_/g, ' ').toUpperCase()}</td>
+                            <td style="padding: 10px 16px; font-style: italic; opacity: 0.6;">(Complex Object - See Visuals)</td>
+                        </tr>
+                    `;
+                }
+            } else {
+                sectionHtml += `
+                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                        <td style="padding: 10px 16px; color: var(--text-secondary); padding-left: 24px;">${key.replace(/_/g, ' ')}</td>
+                        <td style="padding: 10px 16px;">${formatValue(value)}</td>
+                    </tr>
+                `;
+            }
+        }
+        return sectionHtml;
+    };
+    
+    // Add sections
+    try {
+        html += renderSection('Geometry Overview', res.geometry || res.model);
+        html += renderSection('Design Ratios', res.design_ratios);
+        if (res.checks) {
+            html += renderSection('Bearing Pressure', res.checks.bearing_pressure);
+            html += renderSection('Reinforcement Specs', res.checks.reinforcement);
+            html += renderSection('Crack Width Check', res.checks.crack_width);
+            html += renderSection('Shear Check', res.checks.shear);
+        }
+        html += renderSection('Base Quantities', res.quantities);
+    } catch(e) {
+        html += `<tr><td colspan="2" style="padding: 16px; color: #ef4444;">Error parsing report: ${e.message}</td></tr>`;
+    }
+    
+    html += `
+            </tbody>
+        </table>
+    </div>
+    `;
+    
+    container.innerHTML = html;
 }
 
 function renderDesignDashboardSummary(res) {
@@ -3971,11 +4094,14 @@ function renderDesignDashboardSummary(res) {
     const overallStatus = maxRatioObj.ratio > 1.0 ? 'FAIL' : 'PASS';
     
     html += `
-        <div style="background: var(--surface); border: 2px solid ${getStatusColor(overallStatus)}; border-radius: 8px; padding: 16px; text-align: center;">
-            <div style="font-size: 2rem; font-weight: bold; color: ${getStatusColor(overallStatus)};">${getStatusIcon(overallStatus)}</div>
-            <div style="font-size: 0.85rem; opacity: 0.7; margin-top: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Overall Status</div>
-            <div style="font-size: 1.1rem; font-weight: 600; margin-top: 4px;">Max Ratio: ${maxRatioObj.ratio.toFixed(2)}</div>
-            <div style="font-size: 0.75rem; opacity: 0.6; margin-top: 2px;">Critical: ${maxRatioObj.check}</div>
+        <div style="background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.0)); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-top: 4px solid ${getStatusColor(overallStatus)}; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.05); position: relative; overflow: hidden;">
+            <div style="position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, ${getStatusColor(overallStatus)}20 0%, transparent 60%); z-index: 0; pointer-events: none;"></div>
+            <div style="position: relative; z-index: 1;">
+                <div style="font-size: 2.5rem; font-weight: bold; color: ${getStatusColor(overallStatus)}; text-shadow: 0 2px 10px ${getStatusColor(overallStatus)}40;">${getStatusIcon(overallStatus)}</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Overall Design Status</div>
+                <div style="font-size: 1.25rem; font-weight: 800; margin-top: 4px; color: var(--text-primary);">Max Ratio: ${maxRatioObj.ratio.toFixed(2)}</div>
+                <div style="font-size: 0.8rem; color: var(--primary); margin-top: 4px; background: rgba(var(--primary-rgb), 0.1); display: inline-block; padding: 4px 10px; border-radius: 20px;">Critical: ${maxRatioObj.check}</div>
+            </div>
         </div>
     `;
     
@@ -3985,56 +4111,84 @@ function renderDesignDashboardSummary(res) {
         const bearingRatio = bearing.utilization;
         const bStatus = bearingRatio <= 1 ? 'PASS' : 'FAIL';
         html += `
-            <div style="background: var(--surface); border: 1px solid var(--border); border-left: 4px solid ${getStatusColor(bStatus)}; border-radius: 8px; padding: 16px;">
-                <div style="font-size: 0.85rem; opacity: 0.7; font-weight: 600; text-transform: uppercase;">Bearing Pressure</div>
-                <div style="font-size: 1.25rem; font-weight: bold; margin-top: 8px;">${bearing.max_pressure.toFixed(1)} <span style="font-size: 0.85rem; font-weight: normal; opacity: 0.7;">kN/m²</span></div>
-                <div style="font-size: 0.75rem; opacity: 0.6; margin-top: 4px;">Allowable: ${bearing.allowable} kN/m²</div>
+            <div style="background: var(--surface); border: 1px solid var(--border); border-left: 4px solid ${getStatusColor(bStatus)}; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.02); display: flex; flex-direction: column; justify-content: center;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Soil Bearing</div>
+                    <div style="font-size: 0.75rem; font-weight: bold; padding: 2px 8px; border-radius: 10px; background: ${getStatusColor(bStatus)}20; color: ${getStatusColor(bStatus)};">${bStatus}</div>
+                </div>
+                <div style="font-size: 1.5rem; font-weight: 800; color: var(--text-primary);">${bearing.max_pressure.toFixed(1)} <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-muted);">kN/m²</span></div>
+                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px; display: flex; align-items: center; gap: 4px;">
+                    <svg style="width:14px; height:14px; opacity:0.7;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Allowable: ${bearing.allowable} kN/m²
+                </div>
             </div>
         `;
     }
     
-    // Uplift Check
+    // Uplift Check (Modified identical style)
     const uplift = res.checks.uplift;
     if (uplift) {
         html += `
-            <div style="background: var(--surface); border: 1px solid var(--border); border-left: 4px solid ${getStatusColor(uplift.status)}; border-radius: 8px; padding: 16px;">
-                <div style="font-size: 0.85rem; opacity: 0.7; font-weight: 600; text-transform: uppercase;">Uplift FOS</div>
-                <div style="font-size: 1.25rem; font-weight: bold; margin-top: 8px;">${(uplift.fos_uplift === 999) ? 'No Uplift' : uplift.fos_uplift.toFixed(2)}</div>
-                <div style="font-size: 0.75rem; opacity: 0.6; margin-top: 4px;">Required: 1.10</div>
+            <div style="background: var(--surface); border: 1px solid var(--border); border-left: 4px solid ${getStatusColor(uplift.status)}; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.02); display: flex; flex-direction: column; justify-content: center;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Uplift FOS</div>
+                    <div style="font-size: 0.75rem; font-weight: bold; padding: 2px 8px; border-radius: 10px; background: ${getStatusColor(uplift.status)}20; color: ${getStatusColor(uplift.status)};">${uplift.status}</div>
+                </div>
+                <div style="font-size: 1.5rem; font-weight: 800; color: var(--text-primary);">${(uplift.fos_uplift === 999) ? 'N/A' : uplift.fos_uplift.toFixed(2)}</div>
+                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px; display: flex; align-items: center; gap: 4px;">
+                    <svg style="width:14px; height:14px; opacity:0.7;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Required FOS: 1.10
+                </div>
             </div>
         `;
     }
     
     // Crack Width (Max)
     if (res.checks.crack_width) {
-        let maxCrack = 0;
-        let crackStatus = 'PASS';
-        for (const [el, data] of Object.entries(res.checks.crack_width)) {
-            if (data.status === 'FAIL') crackStatus = 'FAIL';
-            if (data.wk > maxCrack) maxCrack = data.wk;
-        }
+        const cw = res.checks.crack_width;
+        let crackStatus = cw.status || 'PASS';
+        let maxCrack = cw.crack_width || 0;
+        const exposure = document.getElementById('ad-exposure') ? document.getElementById('ad-exposure').value : 'SEVERE';
         
         html += `
-            <div style="background: var(--surface); border: 1px solid var(--border); border-left: 4px solid ${getStatusColor(crackStatus)}; border-radius: 8px; padding: 16px;">
-                <div style="font-size: 0.85rem; opacity: 0.7; font-weight: 600; text-transform: uppercase;">Max Crack Width</div>
-                <div style="font-size: 1.25rem; font-weight: bold; margin-top: 8px;">${maxCrack.toFixed(3)} <span style="font-size: 0.85rem; font-weight: normal; opacity: 0.7;">mm</span></div>
-                <div style="font-size: 0.75rem; opacity: 0.6; margin-top: 4px;">For ${res.checks.crack_width.outer_walls.exposure_condition} exposure</div>
+            <div style="background: var(--surface); border: 1px solid var(--border); border-left: 4px solid ${getStatusColor(crackStatus)}; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.02); display: flex; flex-direction: column; justify-content: center;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Max Crack Width</div>
+                    <div style="font-size: 0.75rem; font-weight: bold; padding: 2px 8px; border-radius: 10px; background: ${getStatusColor(crackStatus)}20; color: ${getStatusColor(crackStatus)};">${crackStatus}</div>
+                </div>
+                <div style="font-size: 1.5rem; font-weight: 800; color: var(--text-primary);">${maxCrack.toFixed(3)} <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-muted);">mm</span></div>
+                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px; display: flex; align-items: center; gap: 4px;">
+                    <svg style="width:14px; height:14px; opacity:0.7;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    Limit: ${cw.permissible.toFixed(3)} mm (${exposure})
+                </div>
             </div>
         `;
     }
     
-    // Quantities
+    // Quantities (Big Span Card)
     if (res.quantities) {
         html += `
-            <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+            <div style="background: linear-gradient(to right, var(--surface), rgba(16, 185, 129, 0.03)); border: 1px solid var(--border); border-left: 4px solid var(--primary); border-radius: 12px; padding: 20px; grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.02);">
                 <div>
-                    <div style="font-size: 0.85rem; opacity: 0.7; font-weight: 600; text-transform: uppercase;">Quantity Estimates</div>
-                    <div style="font-size: 0.8rem; opacity: 0.5; margin-top: 2px;">For ${res.model.total_length}m length</div>
+                    <div style="font-size: 0.85rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px;">
+                        <svg style="width:16px; height:16px; color: var(--primary);" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        Baseline BOQ Estimates
+                    </div>
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 4px;">Computed for exactly ${res.geometry ? res.geometry.culvert_length : 10}m length segment</div>
                 </div>
-                <div style="display: flex; gap: 24px;">
-                    <div><span style="font-size: 1.2rem; font-weight: bold;">${res.quantities.total_concrete.toFixed(1)}</span> <span style="opacity: 0.6; font-size: 0.85rem;">m³ Concrete</span></div>
-                    <div><span style="font-size: 1.2rem; font-weight: bold;">${res.quantities.total_steel_kg.toFixed(0)}</span> <span style="opacity: 0.6; font-size: 0.85rem;">kg Steel</span></div>
-                    <div><span style="font-size: 1.2rem; font-weight: bold;">${res.quantities.total_formwork.toFixed(1)}</span> <span style="opacity: 0.6; font-size: 0.85rem;">m² Formwork</span></div>
+                <div style="display: flex; gap: 32px;">
+                    <div style="text-align: right;">
+                        <div style="font-size: 1.5rem; font-weight: 800; color: var(--text-primary);">${res.quantities.total_concrete.toFixed(1)}</div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Concrete (m³)</div>
+                    </div>
+                    <div style="text-align: right; border-left: 1px solid var(--border); padding-left: 32px;">
+                        <div style="font-size: 1.5rem; font-weight: 800; color: var(--text-primary);">${res.quantities.total_steel_kg.toFixed(0)}</div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Steel (kg)</div>
+                    </div>
+                    <div style="text-align: right; border-left: 1px solid var(--border); padding-left: 32px;">
+                        <div style="font-size: 1.5rem; font-weight: 800; color: var(--text-primary);">${res.quantities.total_formwork.toFixed(1)}</div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Formwork (m²)</div>
+                    </div>
                 </div>
             </div>
         `;
