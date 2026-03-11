@@ -236,6 +236,11 @@
                 <use href="#i-brain" />
             </svg> Smart Tools
         </button>
+        <button class="tab-btn auto-design-tab" data-tab="auto-design" onclick="switchTab('auto-design')">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg> 🚀 Auto Design
+        </button>
     </nav>
 
     <!-- Main Content -->
@@ -1346,93 +1351,167 @@
                     <h2 class="card-title">Structure Configuration</h2>
                     <p class="helper-text">Defines the geometry and type of your structure. Box culvert options enable
                         wall and base slab member groups for earth/water pressure application.</p>
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label>Structure Type</label>
-                            <select id="structure-type" onchange="syncStructureConfig()">
-                                <option value="BRIDGE_DECK">Bridge Deck</option>
-                                <option value="BOX_CULVERT_1CELL">Box Culvert — 1 Cell</option>
-                                <option value="BOX_CULVERT_2CELL">Box Culvert — 2 Cells</option>
-                                <option value="BOX_CULVERT_3CELL">Box Culvert — 3 Cells</option>
-                                <option value="BOX_CULVERT_4CELL">Box Culvert — 4 Cells</option>
-                            </select>
-                            <span class="field-hint">Box culvert adds wall + base member groups</span>
+                    <div class="structure-sections">
+                        <div class="section-block">
+                            <h3 class="section-title">Type & Templates</h3>
+                            <p class="section-note">Pick a structure type and optional template. Templates can auto-fill
+                                geometry fields or expose a guided set of inputs.</p>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label>Structure Type</label>
+                                    <select id="structure-type" onchange="syncStructureConfig()">
+                                        <option value="BRIDGE_DECK">Bridge Deck</option>
+                                        <option value="BOX_CULVERT_1CELL">Box Culvert — 1 Cell</option>
+                                        <option value="BOX_CULVERT_2CELL">Box Culvert — 2 Cells</option>
+                                        <option value="BOX_CULVERT_3CELL">Box Culvert — 3 Cells</option>
+                                        <option value="BOX_CULVERT_4CELL">Box Culvert — 4 Cells</option>
+                                    </select>
+                                    <span class="field-hint">Box culvert adds wall + base member groups</span>
+                                </div>
+                                <div class="form-group">
+                                    <label>Geometry Template</label>
+                                    <select id="geometry-template">
+                                        <option value="NONE" selected>None (use structure inputs)</option>
+                                        <option value="JOINT_21_6">Joint-Based 21.6m (custom breakpoints)</option>
+                                        <option value="MORTH_USER">MoRTH RCC Box (enter drawing dims)</option>
+                                        <option value="MORTH_RCC_1C">MoRTH RCC Box — Single Cell (fields)</option>
+                                        <option value="MORTH_RCC_2C">MoRTH RCC Box — Two Cell (fields)</option>
+                                        <option value="MORTH_RCC_3C">MoRTH RCC Box — Three Cell (fields)</option>
+                                        <option value="IRC_SP13_1C">IRC SP-13 Box Culvert — Single Cell (fields)</option>
+                                        <option value="IRC_SP13_2C">IRC SP-13 Box Culvert — Two Cell (fields)</option>
+                                    </select>
+                                    <span class="field-hint">Optional preset to auto-fill geometry fields</span>
+                                </div>
+                                <div class="form-group full-width" id="geometry-template-fields" style="display:none;">
+                                    <label>Template Fields (Optional)</label>
+                                    <div class="form-grid" id="geometry-template-fields-grid"></div>
+                                    <div style="display:flex;gap:12px;align-items:center;margin-top:8px;flex-wrap:wrap">
+                                        <button class="btn btn-xs btn-primary" type="button"
+                                            id="geometry-template-apply">
+                                            Apply Template Fields
+                                        </button>
+                                        <span class="field-hint">
+                                            Only filled values override the Structure Configuration inputs.
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>Total Width (m)</label>
-                            <input type="number" id="total-width" value="8.50" step="0.01" min="0.01">
-                            <span class="field-hint">Outer-to-outer width of deck/culvert</span>
+
+                        <div class="section-block">
+                            <h3 class="section-title">Geometry</h3>
+                            <p class="section-note">Core layout dimensions. Total width is outer-to-outer. Clear height
+                                and span are internal dimensions.</p>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label>Total Width (m)</label>
+                                    <input type="number" id="total-width" value="8.50" step="0.01" min="0.01">
+                                    <span class="field-hint">Outer-to-outer width of deck/culvert</span>
+                                </div>
+                                <div class="form-group">
+                                    <label>Reference Axis</label>
+                                    <select id="reference-axis">
+                                        <option value="LEFT_EDGE" selected>Left Edge</option>
+                                        <option value="RIGHT_EDGE">Right Edge</option>
+                                        <option value="CENTERLINE">Centerline</option>
+                                        <option value="CUSTOM">Custom Datum</option>
+                                    </select>
+                                    <span class="field-hint">All positions measured from this point</span>
+                                </div>
+                                <div class="form-group">
+                                    <label>Custom Datum (m)</label>
+                                    <input type="number" id="custom-datum" value="0" step="0.01">
+                                    <span class="field-hint">Only used if Reference Axis = Custom</span>
+                                </div>
+                                <div class="form-group">
+                                    <label>n. Clear Height (max) (m)</label>
+                                    <input type="number" id="culvert-height" value="3.000" step="0.001" min="0">
+                                    <span class="field-hint">Inner clear height of the cell</span>
+                                </div>
+                                <div class="form-group">
+                                    <label>j. Clear Span of Cell (m)</label>
+                                    <input type="number" id="clear-span" value="4.0" step="0.01" min="0.5">
+                                    <span class="field-hint">Inner clear horizontal span of one cell</span>
+                                </div>
+                                <div class="form-group">
+                                    <label>k. Number of Cells</label>
+                                    <input type="number" id="num-cells" value="1" min="1" max="10">
+                                    <span class="field-hint">Required for box culvert model</span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>Reference Axis</label>
-                            <select id="reference-axis">
-                                <option value="LEFT_EDGE" selected>Left Edge</option>
-                                <option value="RIGHT_EDGE">Right Edge</option>
-                                <option value="CENTERLINE">Centerline</option>
-                                <option value="CUSTOM">Custom Datum</option>
-                            </select>
-                            <span class="field-hint">All positions measured from this point</span>
+
+                        <div class="section-block">
+                            <h3 class="section-title">Thicknesses & Haunch</h3>
+                            <p class="section-note">Wall and slab thicknesses used for geometry and load
+                                classification.</p>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label>d. Thickness of Top Slab (m)</label>
+                                    <input type="number" id="slab-thickness" value="0.30" step="0.01" min="0.01">
+                                    <span class="field-hint">Required for longitudinal sweep stiffness model</span>
+                                </div>
+                                <div class="form-group">
+                                    <label>e. Thickness of Bottom Slab (m)</label>
+                                    <input type="number" id="bottom-slab-thickness" value="0.35" step="0.01" min="0.01">
+                                    <span class="field-hint">Required for realistic sweep stiffness and design output
+                                        reporting</span>
+                                </div>
+                                <div class="form-group">
+                                    <label>f. Thickness of External Wall (m)</label>
+                                    <input type="number" id="wall-thickness" value="0.30" step="0.01" min="0.01">
+                                    <span class="field-hint">Required for longitudinal sweep and multi-cell geometry</span>
+                                </div>
+                                <div class="form-group">
+                                    <label>f. Thickness of Internal Wall (m)</label>
+                                    <input type="number" id="mid-wall-thickness" value="0.30" step="0.01" min="0.01">
+                                    <span class="field-hint">Intermediate vertical wall thickness</span>
+                                </div>
+                                <div class="form-group">
+                                    <label>Haunch Size (m)</label>
+                                    <input type="number" id="haunch-size" value="0.15" step="0.01" min="0.0">
+                                    <span class="field-hint">Corner fillet size</span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>Custom Datum (m)</label>
-                            <input type="number" id="custom-datum" value="0" step="0.01">
-                            <span class="field-hint">Only used if Reference Axis = Custom</span>
+
+                        <div class="section-block">
+                            <h3 class="section-title">Fill & Surface</h3>
+                            <p class="section-note">Defines soil cover above the top slab for earth pressure
+                                templates.</p>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label>Fill Depth (m)</label>
+                                    <input type="number" id="fill-depth" value="0.0" step="0.01" min="0">
+                                    <span class="field-hint">Earth fill above top slab (0 = no fill)</span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>n. Clear Height (max) (m)</label>
-                            <input type="number" id="culvert-height" value="3.000" step="0.001" min="0">
-                            <span class="field-hint">Inner clear height of the cell</span>
-                        </div>
-                        <div class="form-group">
-                            <label>j. Clear Span of Cell (m)</label>
-                            <input type="number" id="clear-span" value="4.0" step="0.01" min="0.5">
-                            <span class="field-hint">Inner clear horizontal span of one cell</span>
-                        </div>
-                        <div class="form-group">
-                            <label>k. Number of Cells</label>
-                            <input type="number" id="num-cells" value="1" min="1" max="10">
-                            <span class="field-hint">Required for box culvert model</span>
-                        </div>
-                        <div class="form-group">
-                            <label>d. Thickness of Top Slab (m)</label>
-                            <input type="number" id="slab-thickness" value="0.30" step="0.01" min="0.01">
-                            <span class="field-hint">Required for longitudinal sweep stiffness model</span>
-                        </div>
-                        <div class="form-group">
-                            <label>e. Thickness of Bottom Slab (m)</label>
-                            <input type="number" id="bottom-slab-thickness" value="0.35" step="0.01" min="0.01">
-                            <span class="field-hint">Required for realistic sweep stiffness and design output
-                                reporting</span>
-                        </div>
-                        <div class="form-group">
-                            <label>f. Thickness of External Wall (m)</label>
-                            <input type="number" id="wall-thickness" value="0.30" step="0.01" min="0.01">
-                            <span class="field-hint">Required for longitudinal sweep and multi-cell geometry</span>
-                        </div>
-                        <div class="form-group">
-                            <label>f. Thickness of Internal Wall (m)</label>
-                            <input type="number" id="mid-wall-thickness" value="0.30" step="0.01" min="0.01">
-                            <span class="field-hint">Intermediate vertical wall thickness</span>
-                        </div>
-                        <div class="form-group">
-                            <label>Ext Wall Thickness (m)</label>
-                            <input type="number" id="wall-thickness" value="0.30" step="0.01" min="0.01">
-                            <span class="field-hint">Required for longitudinal sweep and multi-cell geometry</span>
-                        </div>
-                        <div class="form-group">
-                            <label>Int Wall Thickness (m)</label>
-                            <input type="number" id="mid-wall-thickness" value="0.30" step="0.01" min="0.01">
-                            <span class="field-hint">Intermediate vertical wall thickness</span>
-                        </div>
-                        <div class="form-group">
-                            <label>Haunch Size (m)</label>
-                            <input type="number" id="haunch-size" value="0.15" step="0.01" min="0.0">
-                            <span class="field-hint">Corner fillet size</span>
-                        </div>
-                        <div class="form-group">
-                            <label>Fill Depth (m)</label>
-                            <input type="number" id="fill-depth" value="0.0" step="0.01" min="0">
-                            <span class="field-hint">Earth fill above top slab (0 = no fill)</span>
+
+                        <div class="section-block">
+                            <h3 class="section-title">Advanced Layout Override</h3>
+                            <p class="section-note">Override auto-generated member strips with explicit breakpoints and
+                                wall ranges.</p>
+                            <div class="form-grid">
+                                <div class="form-group full-width">
+                                    <label>Custom Breakpoints (m)</label>
+                                    <input type="text" id="custom-breakpoints"
+                                        placeholder="e.g. 0,0.45,0.95,5.45,9.95,10.45,10.8,11.15,11.65,16.15,20.65,21.15,21.6"
+                                        style="width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px" />
+                                    <span class="field-hint" style="margin-top:6px;display:block">
+                                        Comma-separated X positions from left edge. Overrides clear span/haunch logic.
+                                    </span>
+                                </div>
+                                <div class="form-group full-width">
+                                    <label>Custom Wall Ranges (m)</label>
+                                    <input type="text" id="custom-wall-ranges"
+                                        placeholder="e.g. 0-0.45, 9.95-10.45, 21.15-21.6"
+                                        style="width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px" />
+                                    <span class="field-hint" style="margin-top:6px;display:block">
+                                        Wall segments to classify as LEFT/MIDDLE/RIGHT walls. Others become slab strips.
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1577,6 +1656,26 @@
                             </ul>
                         </div>
                     </details>
+
+                    <div style="margin-top:14px">
+                        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:6px">
+                            Import from STAAD Joint Coordinates
+                        </label>
+                        <textarea id="joint-coordinates" rows="6"
+                            placeholder="JOINT COORDINATES\n1 0.000 10.775 0;\n2 0.450 10.775 0;\n..."
+                            style="width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"></textarea>
+                        <div style="display:flex; gap:10px; align-items:center; margin-top:8px; flex-wrap:wrap">
+                            <button class="btn btn-sm btn-accent" onclick="importJointCoordinates()">Generate Members</button>
+                            <label style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:6px">
+                                <input type="checkbox" id="joint-infer-settings" checked>
+                                Infer structure settings from joints
+                            </label>
+                        </div>
+                        <span class="field-hint" style="margin-top:6px; display:block">
+                            Parses STAAD <code>JOINT COORDINATES</code> lines (id x y z) and builds member strips from X
+                            positions. Switches to Manual mode to prevent auto-overwrite.
+                        </span>
+                    </div>
                 </div>
 
                 <!-- Member Table -->
@@ -1821,6 +1920,11 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
                     </div>
 
                     <div class="form-grid">
+                        <div class="form-group" style="grid-column:1/-1">
+                            <label>STAAD Moving Load (optional)</label>
+                            <textarea id="ml-std-input" rows="6" placeholder="Paste DEFINE MOVING LOAD / LOAD GENERATION block here"></textarea>
+                            <span class="field-hint">If provided, the sweep uses these TYPE trains. Loads-tab vehicle tags are ignored for sweep.</span>
+                        </div>
                         <div class="form-group"><label>Increment (m)</label><input type="number" id="ml-increment"
                                 value="0.1" step="0.1" min="0.1"></div>
                     </div>
@@ -2846,12 +2950,106 @@ EP1,LC2,EARTH_PRESSURE,0,3,0,27,GX,Earth pressure on wall</code>
 
         </section>
 
+        <!-- ═══ AUTO DESIGN TAB ═══ -->
+        <section id="tab-auto-design" class="tab-panel">
+            <div class="header-banner" style="background: linear-gradient(135deg, #0f172a, #1e293b); padding: 24px; border-radius: 12px; color: white; margin-bottom: 24px;">
+                <h1 style="margin: 0 0 8px 0; font-size: 1.5rem; display: flex; align-items: center; gap: 12px;">
+                    <span>🚀</span> 1-Click RCC Box Culvert Design
+                </h1>
+                <p style="margin: 0; opacity: 0.8; font-size: 0.95rem;">Enter 18 core parameters. Automatically generate all IRC load cases, combinations, design checks, quantities, BBS, and diagrams.</p>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 350px 1fr; gap: 24px; align-items: start;">
+                <!-- Left Sidebar: The 18 Inputs -->
+                <div class="input-sidebar" style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px;">
+                    
+                    <h3 style="margin-top:0; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 16px;">1. Geometry</h3>
+                    <div class="form-group"><label>Cells</label><select id="ad-cells"><option>1</option><option>2</option><option>3</option><option>4</option></select></div>
+                    <div class="form-group"><label>Clear Span (m)</label><input type="number" id="ad-span" value="4.0" step="0.1"></div>
+                    <div class="form-group"><label>Clear Height (m)</label><input type="number" id="ad-height" value="3.0" step="0.1"></div>
+                    <div class="form-group"><label>Top Slab Thk (m)</label><input type="number" id="ad-top" value="0.30" step="0.05"></div>
+                    <div class="form-group"><label>Bot Slab Thk (m)</label><input type="number" id="ad-bot" value="0.35" step="0.05"></div>
+                    <div class="form-group"><label>Outer Wall (m)</label><input type="number" id="ad-wall" value="0.30" step="0.05"></div>
+                    <div class="form-group"><label>Mid Wall (m)</label><input type="number" id="ad-midwall" value="0.30" step="0.05"></div>
+                    <div class="form-group"><label>Haunch (m)</label><input type="number" id="ad-haunch" value="0.15" step="0.05"></div>
+
+                    <h3 style="margin-top:24px; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 16px;">2. Material</h3>
+                    <div class="form-group"><label>fck (MPa)</label><select id="ad-fck"><option>25</option><option selected>30</option><option>35</option><option>40</option></select></div>
+                    <div class="form-group"><label>fy (MPa)</label><select id="ad-fy"><option>415</option><option selected>500</option><option>550</option></select></div>
+                    <div class="form-group"><label>Clear Cover (mm)</label><input type="number" id="ad-cover" value="50" step="5"></div>
+
+                    <h3 style="margin-top:24px; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 16px;">3. Site & Soil</h3>
+                    <div class="form-group"><label>Fill Depth (m)</label><input type="number" id="ad-fill" value="0.6" step="0.1"></div>
+                    <div class="form-group"><label>Wearing Course (m)</label><input type="number" id="ad-wc" value="0.075" step="0.005"></div>
+                    <div class="form-group"><label>Soil γ (kN/m³)</label><input type="number" id="ad-gamma" value="18.0" step="0.5"></div>
+                    <div class="form-group"><label>Friction Angle (°)</label><input type="number" id="ad-phi" value="30" step="1"></div>
+                    <div class="form-group"><label>Allowable SBC (kN/m²)</label><input type="number" id="ad-sbc" value="150" step="10"></div>
+
+                    <h3 style="margin-top:24px; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 16px;">4. Hydraulic</h3>
+                    <div class="form-group"><label>Water Table Depth (m)</label><input type="number" id="ad-water" value="0.0" step="0.1" title="Below bottom slab"></div>
+                    <div class="form-group"><label>Analysis Length (m)</label><input type="number" id="ad-length" value="10.0" step="1.0"></div>
+
+                    <button class="btn btn-primary" onclick="runAutoDesign()" style="width: 100%; margin-top: 32px; padding: 16px; font-size: 1.1rem; background: linear-gradient(135deg, #10b981, #059669); font-weight: bold; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                        ⚡ Run Complete Design
+                    </button>
+                </div>
+
+                <!-- Right Content: The Results -->
+                <div class="results-dashboard" id="ad-dashboard" style="display: none;">
+                    
+                    <!-- Traffic Light Summary -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;" id="ad-summary-cards">
+                        <!-- Cards injected via JS -->
+                    </div>
+
+                    <!-- Tabs for different diagrams -->
+                    <div class="card" style="padding: 0;">
+                        <nav class="diagram-nav" style="display: flex; border-bottom: 1px solid var(--border); background: var(--surface);">
+                            <button class="tab-btn active" style="padding: 12px 20px; border: none; background: transparent; cursor: pointer; border-bottom: 2px solid var(--primary); font-weight: 500;" onclick="switchAdTab('ad-tab-geometry')">Geometry & Loads</button>
+                            <button class="tab-btn" style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;" onclick="switchAdTab('ad-tab-sfd')">BMD/SFD Envelopes</button>
+                            <button class="tab-btn" style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;" onclick="switchAdTab('ad-tab-pressure')">Base Pressure</button>
+                            <button class="tab-btn" style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;" onclick="switchAdTab('ad-tab-rebar')">Reinforcement</button>
+                            <button class="tab-btn" style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;" onclick="switchAdTab('ad-tab-report')">Detailed Report</button>
+                        </nav>
+                        
+                        <div class="diagram-content" style="padding: 24px;">
+                            <div id="ad-tab-geometry">
+                                <canvas id="ad-viz-geometry" style="width:100%; height:500px;"></canvas>
+                                <div style="display:flex; justify-content:center; gap:8px; margin-top:16px;" id="ad-load-toggles"></div>
+                            </div>
+                            <div id="ad-tab-sfd" style="display:none;">
+                                <canvas id="ad-viz-sfd" style="width:100%; height:500px;"></canvas>
+                            </div>
+                            <div id="ad-tab-pressure" style="display:none;">
+                                <canvas id="ad-viz-pressure" style="width:100%; height:400px;"></canvas>
+                            </div>
+                            <div id="ad-tab-rebar" style="display:none;">
+                                <canvas id="ad-viz-rebar" style="width:100%; height:500px;"></canvas>
+                            </div>
+                            <div id="ad-tab-report" style="display:none;">
+                                <div class="code-preview" id="ad-raw-json" style="max-height: 600px; overflow: auto; font-size: 13px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Loading State -->
+                <div id="ad-loading" style="display: none; padding: 60px; text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: 12px;">
+                    <div style="font-size: 3rem; margin-bottom: 16px; animation: spin 2s linear infinite;">⚙️</div>
+                    <h2 style="margin:0 0 8px 0;">Running Engine Pipeline...</h2>
+                    <p style="opacity:0.7; max-width: 400px; margin: 0 auto; line-height: 1.6;">Generating 10 load cases, running vehicle sweeps, computing impact factors, designing flexure & shear reinforcements, estimating quantities, and generating diagrams.</p>
+                </div>
+
+            </div>
+        </section>
+
     </main>
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     <script src="{{ url_for('static', filename='js/visualization.js') }}"></script>
     <script src="{{ url_for('static', filename='js/staad_viz.js') }}"></script>
     <script src="{{ url_for('static', filename='js/results_frame_viz.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/design_diagrams.js') }}"></script>
 </body>
 
 </html>

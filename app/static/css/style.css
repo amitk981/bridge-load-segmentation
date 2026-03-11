@@ -222,6 +222,33 @@ body {
     gap: 16px;
 }
 
+.structure-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.section-block {
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.section-title {
+    margin: 0 0 6px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-secondary);
+}
+
+.section-note {
+    margin: 0 0 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
 .form-group {
     display: flex;
     flex-direction: column;

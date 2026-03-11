@@ -19,7 +19,8 @@ from app.models.schemas import (
 )
 from app.core.geometry import (
     generate_equal_segments, create_manual_segments,
-    generate_box_culvert_members, normalize_positions,
+    generate_box_culvert_members, generate_standard_box_culvert_members,
+    generate_members_from_breakpoints, normalize_positions,
 )
 from app.core.loads import (
     create_load, apply_dispersion, parse_loads_csv,
@@ -368,6 +369,7 @@ from app.core.smart_features import (
     compute_settlement,
     # Longitudinal moving-load sweep
     compute_longitudinal_critical_positions,
+    parse_staad_moving_load,
 )
 
 
@@ -442,7 +444,28 @@ def smart_longitudinal_critical():
                 "details": [str(e)],
             }), 400
 
+        moving_load_text = str(data.get("moving_load_text", "") or "").strip()
+        moving_load_info = None
+        custom_vehicles = None
         vehicles, matched_load_ids = _infer_sweep_vehicles_from_loads(loads)
+
+        if moving_load_text:
+            parsed = parse_staad_moving_load(moving_load_text)
+            moving_load_info = {
+                "used": True,
+                "type_ids": parsed.get("used_type_ids", []),
+                "warnings": parsed.get("warnings", []),
+                "errors": parsed.get("errors", []),
+            }
+            if parsed.get("errors"):
+                return jsonify({
+                    "success": False,
+                    "error": "STAAD moving load parsing failed",
+                    "details": parsed["errors"],
+                }), 400
+            custom_vehicles = parsed.get("vehicle_defs", [])
+            vehicles = [v.get("vehicle_code", v.get("name", "CUSTOM")) for v in custom_vehicles]
+
         input_errors = _validate_sweep_inputs(settings, members, loads, vehicles, increment)
         if input_errors:
             return jsonify({
@@ -464,13 +487,15 @@ def smart_longitudinal_critical():
             increment=increment,
             fck=float(data.get("fck", 30.0)),
             vehicles=vehicles,
+            custom_vehicles=custom_vehicles,
         )
 
         result["inference"] = {
-            "vehicles_from_loads": vehicles,
-            "matched_load_ids": matched_load_ids,
+            "vehicles_from_loads": vehicles if not moving_load_text else [],
+            "matched_load_ids": matched_load_ids if not moving_load_text else [],
             "geometry_source": "members + project settings",
             "geometry": geometry,
+            "moving_load": moving_load_info or {"used": False},
         }
         return jsonify({"success": True, "result": result})
     except Exception as e:
@@ -863,6 +888,46 @@ def smart_settlement():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+
+@app.route("/api/smart/auto-design", methods=["POST"])
+def smart_auto_design():
+    """
+    Complete end-to-end auto-design.
+
+    Accepts 18 geometry/material/soil/hydraulic inputs;
+    returns a full design package (loads, checks, diagrams data, BBS, quantities).
+    """
+    try:
+        from app.core.smart_features import run_complete_design
+
+        data = request.json or {}
+        result = run_complete_design(
+            num_cells=int(data.get("num_cells", 1)),
+            clear_span=float(data.get("clear_span", 4.0)),
+            clear_height=float(data.get("clear_height", 3.0)),
+            top_slab_thickness=float(data.get("top_slab_thickness", 0.30)),
+            bottom_slab_thickness=float(data.get("bottom_slab_thickness", 0.35)),
+            wall_thickness=float(data.get("wall_thickness", 0.30)),
+            mid_wall_thickness=float(data.get("mid_wall_thickness", 0.30)),
+            haunch_size=float(data.get("haunch_size", 0.15)),
+            fck=float(data.get("fck", 30.0)),
+            fy=float(data.get("fy", 500.0)),
+            clear_cover=float(data.get("clear_cover", 50.0)),
+            fill_depth=float(data.get("fill_depth", 0.6)),
+            wearing_course_thickness=float(data.get("wearing_course_thickness", 0.075)),
+            gamma_soil=float(data.get("gamma_soil", 18.0)),
+            friction_angle=float(data.get("friction_angle", 30.0)),
+            allowable_bearing=float(data.get("allowable_bearing", 150.0)),
+            water_table_depth=float(data.get("water_table_depth", 0.0)),
+            culvert_length=float(data.get("culvert_length", 10.0)),
+        )
+        return jsonify({"success": True, "result": result})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 def _parse_request_payload(data: dict) -> tuple[ProjectSettings, list[MemberSegment], list[LoadPatch]]:
     """Parse settings, members, and loads with consistent 400-friendly errors."""
     try:
@@ -918,6 +983,54 @@ def _as_bool(value, default: bool = False) -> bool:
     return bool(value)
 
 
+def _parse_float_list(value, field_name: str) -> list[float]:
+    if _is_missing(value):
+        return []
+    if isinstance(value, list):
+        out = []
+        for v in value:
+            if _is_missing(v):
+                continue
+            try:
+                out.append(float(v))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{field_name} must contain valid numbers.") from exc
+        return out
+
+    text = str(value)
+    parts = [p for p in text.replace(";", ",").replace("|", ",").split(",") if p.strip()]
+    out = []
+    for p in parts:
+        try:
+            out.append(float(p.strip()))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field_name} must contain valid numbers.") from exc
+    return out
+
+
+def _parse_range_list(value, field_name: str) -> list[tuple[float, float]]:
+    if _is_missing(value):
+        return []
+    if isinstance(value, list):
+        out = []
+        for item in value:
+            if isinstance(item, (list, tuple)) and len(item) == 2:
+                out.append((float(item[0]), float(item[1])))
+            else:
+                raise ValueError(f"{field_name} must be a list of [start, end] pairs.")
+        return out
+
+    text = str(value)
+    parts = [p for p in text.replace(";", ",").split(",") if p.strip()]
+    out = []
+    for p in parts:
+        if "-" not in p:
+            raise ValueError(f"{field_name} must contain ranges like 0-0.45.")
+        a, b = p.split("-", 1)
+        out.append((float(a.strip()), float(b.strip())))
+    return out
+
+
 def _parse_settings(data: dict) -> ProjectSettings:
     if not isinstance(data, dict):
         raise ValueError("Project Settings payload must be an object.")
@@ -944,6 +1057,49 @@ def _parse_settings(data: dict) -> ProjectSettings:
     except ValueError as exc:
         raise ValueError(f'Project Settings: overhang_policy "{overhang_raw}" is invalid.') from exc
 
+    # Box culvert-specific fields (optional, derive if missing)
+    wall_thickness = float(data.get("wall_thickness", 0.3))
+    mid_wall_thickness = _as_optional_float(data.get("mid_wall_thickness"), "Project Settings: Mid Wall Thickness")
+    if mid_wall_thickness is None:
+        mid_wall_thickness = wall_thickness
+
+    clear_span = _as_optional_float(data.get("clear_span"), "Project Settings: Clear Span") or 0.0
+    haunch_size = _as_optional_float(data.get("haunch_size"), "Project Settings: Haunch Size") or 0.0
+
+    num_cells_raw = data.get("num_cells")
+    if _is_missing(num_cells_raw):
+        num_cells = {
+            StructureType.BOX_CULVERT_1CELL: 1,
+            StructureType.BOX_CULVERT_2CELL: 2,
+            StructureType.BOX_CULVERT_3CELL: 3,
+            StructureType.BOX_CULVERT_4CELL: 4,
+        }.get(structure_type, 1)
+    else:
+        num_cells = _as_required_int(num_cells_raw, "Project Settings: Number of Cells")
+
+    total_width = float(data.get("total_width", 8.5))
+    custom_breakpoints = _parse_float_list(data.get("custom_breakpoints"), "Project Settings: Custom Breakpoints")
+    custom_wall_ranges = _parse_range_list(data.get("custom_wall_ranges"), "Project Settings: Custom Wall Ranges")
+
+    if custom_breakpoints:
+        custom_breakpoints = sorted(set(custom_breakpoints))
+        if len(custom_breakpoints) >= 2:
+            total_width = custom_breakpoints[-1] - custom_breakpoints[0]
+    if structure_type in {
+        StructureType.BOX_CULVERT_1CELL,
+        StructureType.BOX_CULVERT_2CELL,
+        StructureType.BOX_CULVERT_3CELL,
+        StructureType.BOX_CULVERT_4CELL,
+    }:
+        if clear_span <= 0 and total_width > 0:
+            denom = max(num_cells, 1)
+            clear_span = (total_width - (2 * wall_thickness + max(0, num_cells - 1) * mid_wall_thickness)) / denom
+        if clear_span <= 0:
+            clear_span = 4.0
+        computed_total = num_cells * clear_span + 2 * wall_thickness + max(0, num_cells - 1) * mid_wall_thickness
+        if computed_total > 0 and not custom_breakpoints:
+            total_width = computed_total
+
     return ProjectSettings(
         project_name=str(data.get("project_name", "Untitled Project")),
         bridge_name=str(data.get("bridge_name", "")),
@@ -951,14 +1107,20 @@ def _parse_settings(data: dict) -> ProjectSettings:
         project_date=str(data.get("project_date", date.today().isoformat())),
         comments=str(data.get("comments", "")),
         structure_type=structure_type,
-        total_width=float(data.get("total_width", 8.5)),
+        total_width=total_width,
         reference_axis=reference_axis,
         custom_datum=float(data.get("custom_datum", 0.0)),
         culvert_height=float(data.get("culvert_height", 0.0)),
         fill_depth=float(data.get("fill_depth", 0.0)),
         slab_thickness=float(data.get("slab_thickness", 0.3)),
         bottom_slab_thickness=float(data.get("bottom_slab_thickness", 0.35)),
-        wall_thickness=float(data.get("wall_thickness", 0.3)),
+        wall_thickness=wall_thickness,
+        clear_span=clear_span,
+        num_cells=num_cells,
+        mid_wall_thickness=mid_wall_thickness,
+        haunch_size=haunch_size,
+        custom_breakpoints=custom_breakpoints,
+        custom_wall_ranges=custom_wall_ranges,
         decimal_precision=int(data.get("decimal_precision", 2)),
         units=units,
         overhang_policy=overhang_policy,
@@ -971,6 +1133,29 @@ def _parse_settings(data: dict) -> ProjectSettings:
 def _parse_members(data: list, settings: ProjectSettings) -> list[MemberSegment]:
     """Parse members from request data, supporting auto and manual modes."""
     if not data:
+        if settings.custom_breakpoints:
+            return generate_members_from_breakpoints(
+                breakpoints=settings.custom_breakpoints,
+                wall_ranges=settings.custom_wall_ranges,
+                start_number=settings.start_member_number,
+                increment=settings.member_increment,
+            )
+        if settings.structure_type in {
+            StructureType.BOX_CULVERT_1CELL,
+            StructureType.BOX_CULVERT_2CELL,
+            StructureType.BOX_CULVERT_3CELL,
+            StructureType.BOX_CULVERT_4CELL,
+        }:
+            return generate_standard_box_culvert_members(
+                clear_span=settings.clear_span,
+                num_cells=settings.num_cells,
+                wall_thickness=settings.wall_thickness,
+                mid_wall_thickness=settings.mid_wall_thickness,
+                haunch_size=settings.haunch_size,
+                start_number=settings.start_member_number,
+                increment=settings.member_increment,
+            )
+
         return generate_equal_segments(
             total_width=settings.total_width,
             num_segments=12,
@@ -1135,9 +1320,9 @@ def _validate_sweep_inputs(
         errors.append("Loads tab: at least one vehicle load row is required.")
     if not vehicles:
         errors.append(
-            "Loads tab: no recognizable sweep vehicle found. Use IRC_70R / IRC_CLASS_A / IRC_CLASS_AA load types, "
+            "No recognizable sweep vehicle found. Use IRC_70R / IRC_CLASS_A / IRC_CLASS_AA load types, "
             "SINGLE_AXLE_BOGIE / DOUBLE_AXLE_BOGIE load types, or bogie keywords in ID/notes "
-            "(single bogie, double bogie, max single axle, max bogie)."
+            "(single bogie, double bogie, max single axle, max bogie), or paste a STAAD moving load block."
         )
 
     return errors
@@ -1218,24 +1403,15 @@ def _infer_sweep_geometry(
 
     # Cell count from member groups first
     middle_groups = set()
-    wall_members = []
     for m in members:
         g = m.group.value if hasattr(m.group, "value") else str(m.group)
         if g.startswith("MIDDLE_WALL_"):
             middle_groups.add(g)
-        if g in (
-            MemberGroup.LEFT_WALL.value,
-            MemberGroup.RIGHT_WALL.value,
-            MemberGroup.MIDDLE_WALL_1.value,
-            MemberGroup.MIDDLE_WALL_2.value,
-            MemberGroup.MIDDLE_WALL_3.value,
-        ):
-            wall_members.append(m)
 
     if middle_groups:
         num_cells = len(middle_groups) + 1
     else:
-        num_cells = {
+        num_cells = settings.num_cells if settings.num_cells > 0 else {
             StructureType.BOX_CULVERT_1CELL: 1,
             StructureType.BOX_CULVERT_2CELL: 2,
             StructureType.BOX_CULVERT_3CELL: 3,
@@ -1243,21 +1419,21 @@ def _infer_sweep_geometry(
         }.get(settings.structure_type, 1)
 
     clear_height = settings.culvert_height if settings.culvert_height > 0 else 3.0
-    if wall_members:
-        h_min = min(m.start for m in wall_members)
-        h_max = max(m.end for m in wall_members)
-        if h_max > h_min:
-            clear_height = h_max - h_min
+    # Members table stores transverse widths, not vertical coordinates,
+    # so do not override height using wall member start/end values.
 
     wall_t = settings.wall_thickness if settings.wall_thickness > 0 else 0.30
-    mid_wall_t = wall_t
+    mid_wall_t = settings.mid_wall_thickness if settings.mid_wall_thickness > 0 else wall_t
     top_t = settings.slab_thickness if settings.slab_thickness > 0 else 0.30
     bottom_t = settings.bottom_slab_thickness if settings.bottom_slab_thickness > 0 else 0.35
 
-    denom = max(num_cells, 1)
-    clear_span = (total_width - (2 * wall_t + max(0, num_cells - 1) * mid_wall_t)) / denom
-    if clear_span <= 0:
-        clear_span = total_width / denom if total_width > 0 else 4.0
+    if settings.clear_span > 0:
+        clear_span = settings.clear_span
+    else:
+        denom = max(num_cells, 1)
+        clear_span = (total_width - (2 * wall_t + max(0, num_cells - 1) * mid_wall_t)) / denom
+        if clear_span <= 0:
+            clear_span = total_width / denom if total_width > 0 else 4.0
 
     return {
         "clear_span": round(clear_span, 4),

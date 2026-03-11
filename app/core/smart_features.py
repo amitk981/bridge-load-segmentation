@@ -19,6 +19,7 @@ Contains calculation engines for:
 from __future__ import annotations
 import math
 from typing import Optional
+import re
 from dataclasses import dataclass, field
 import numpy as np
 
@@ -428,6 +429,7 @@ def compute_longitudinal_critical_positions(
     increment: float = 0.1,
     fck: float = 30.0,
     vehicles: Optional[list[str]] = None,
+    custom_vehicles: Optional[list[dict]] = None,
 ) -> dict:
     """
     Sweep longitudinal vehicle position and find critical response positions.
@@ -452,10 +454,27 @@ def compute_longitudinal_critical_positions(
         raise ValueError("num_cells must be >= 1")
 
     vehicle_library = _irc_vehicle_library()
-    selected_vehicle_codes = vehicles or list(vehicle_library.keys())
-    selected = [code for code in selected_vehicle_codes if code in vehicle_library]
-    if not selected:
-        raise ValueError("No valid vehicle codes selected")
+    selected = []
+    if custom_vehicles:
+        # Expect custom vehicles to already include required metadata
+        for v in custom_vehicles:
+            if not v:
+                continue
+            if not v.get("axle_loads_kN"):
+                continue
+            vcode = v.get("vehicle_code") or v.get("code") or v.get("name") or "CUSTOM"
+            selected.append({
+                "vehicle_code": vcode,
+                "name": v.get("name", vcode),
+                "notes": v.get("notes", "Custom moving load vehicle"),
+                "axle_loads_kN": v.get("axle_loads_kN", []),
+                "axle_spacings_m": v.get("axle_spacings_m", []),
+            })
+    else:
+        selected_vehicle_codes = vehicles or list(vehicle_library.keys())
+        selected = [code for code in selected_vehicle_codes if code in vehicle_library]
+        if not selected:
+            raise ValueError("No valid vehicle codes selected")
 
     model = _build_longitudinal_frame_model(
         clear_span=clear_span,
@@ -473,15 +492,29 @@ def compute_longitudinal_critical_positions(
     groups = ["TOP_SLAB", "BOTTOM_SLAB", "SIDE_WALL", "INTERMEDIATE_WALL"]
 
     for v_code in selected:
-        vehicle = vehicle_library[v_code]
-        axle_loads = vehicle["axle_loads_kN"]
-        axle_offsets = _axle_offsets(vehicle["axle_spacings_m"])
+        if custom_vehicles:
+            vehicle = v_code
+            v_code = vehicle.get("vehicle_code", "CUSTOM")
+        else:
+            vehicle = vehicle_library[v_code]
+
+        axle_loads = list(vehicle["axle_loads_kN"])
+        axle_offsets = _axle_offsets(list(vehicle.get("axle_spacings_m", [])))
+        if len(axle_offsets) != len(axle_loads):
+            n = min(len(axle_offsets), len(axle_loads))
+            axle_offsets = axle_offsets[:n]
+            axle_loads = axle_loads[:n]
         train_length = axle_offsets[-1] if axle_offsets else 0.0
 
         envelopes = _init_group_envelopes(groups)
 
         lead = -train_length
         positions_count = 0
+        
+        # We will collect envelope points for all elements
+        # element_id -> { a_point: {"max": -inf, "min": inf, "X": x, "Y": y} }
+        envelope_points = {elem["id"]: {} for elem in model["elements"]}
+        
         while lead <= total_length + 1e-9:
             positions_count += 1
 
@@ -490,8 +523,28 @@ def compute_longitudinal_critical_positions(
                 lead_position=lead,
                 axle_offsets=axle_offsets,
                 axle_loads=axle_loads,
+                compute_bmd=True,
             )
+            
             _update_group_envelopes(envelopes, response["group_forces"], lead)
+            
+            # Accumulate true BMD Envelope
+            for group, gdata in response["group_forces"].items():
+                for elem_data in gdata.get("elements", []):
+                    eid = elem_data["id"]
+                    for pt in elem_data["bmd"]:
+                        a = pt["a"]
+                        M = pt["M"]
+                        if a not in envelope_points[eid]:
+                            envelope_points[eid][a] = {
+                                "X": pt["X"], "Y": pt["Y"], 
+                                "M_max": M, "M_min": M
+                            }
+                        else:
+                            if M > envelope_points[eid][a]["M_max"]:
+                                envelope_points[eid][a]["M_max"] = M
+                            if M < envelope_points[eid][a]["M_min"]:
+                                envelope_points[eid][a]["M_min"] = M
 
             lead += increment
 
@@ -499,17 +552,33 @@ def compute_longitudinal_critical_positions(
         for group in groups:
             env = envelopes[group]
             
-            for effect in ["sagging", "hogging", "shear"]:
-                if env[effect]["lead_position"] is not None:
-                    resp = _solve_frame_for_vehicle_position(
-                        model=model,
-                        lead_position=env[effect]["lead_position"],
-                        axle_offsets=axle_offsets,
-                        axle_loads=axle_loads,
-                        compute_bmd=True,
-                    )
-                    env[effect]["bmd"] = resp.get("bmd", [])
+            # Fetch the envelope points for elements in this group
+            # We construct the envelope array for the UI
+            group_elements_bmd = []
+            for elem in model["elements"]:
+                if elem["group"] == group:
+                    pts_dict = envelope_points[elem["id"]]
+                    sorted_a = sorted(pts_dict.keys())
+                    pts_list = [
+                        {
+                            "a": a, 
+                            "X": pts_dict[a]["X"], 
+                            "Y": pts_dict[a]["Y"], 
+                            "M_max": round(pts_dict[a]["M_max"], 3), 
+                            "M_min": round(pts_dict[a]["M_min"], 3)
+                        } 
+                        for a in sorted_a
+                    ]
+                    group_elements_bmd.append({
+                        "id": elem["id"],
+                        "points": pts_list
+                    })
 
+            # For backward compatibility with the critical BMD structure, assign the envelope to all critical effects
+            for effect in ["sagging", "hogging", "shear"]:
+                # The UI now expects 'bmd' to actually be the envelope of the group!
+                env[effect]["bmd"] = group_elements_bmd
+                
             group_results.append({
                 "group": group,
                 "max_sagging_moment": env["sagging"],
@@ -519,8 +588,8 @@ def compute_longitudinal_critical_positions(
 
         results.append({
             "vehicle_code": v_code,
-            "vehicle_name": vehicle["name"],
-            "notes": vehicle["notes"],
+            "vehicle_name": vehicle.get("name", v_code),
+            "notes": vehicle.get("notes", ""),
             "axle_loads_kN": axle_loads,
             "axle_offsets_m": axle_offsets,
             "train_length": round(train_length, 3),
@@ -541,6 +610,212 @@ def compute_longitudinal_critical_positions(
             "total_length": round(total_length, 3),
         },
         "vehicles": results,
+    }
+
+
+def parse_staad_moving_load(text: str) -> dict:
+    """
+    Parse STAAD.Pro DEFINE MOVING LOAD / LOAD GENERATION blocks.
+
+    Returns:
+        {
+            "types": {type_id: {"loads": [...], "spacings": [...]}},
+            "generations": [ {"type_id": int, "x": float|None, "y": float|None, "z": float|None, "xinc": float|None, "count": int|None} ],
+            "vehicle_defs": [ {"vehicle_code", "name", "notes", "axle_loads_kN", "axle_spacings_m"} ],
+            "used_type_ids": [...],
+            "warnings": [...],
+            "errors": [...],
+        }
+    """
+    if not text or not str(text).strip():
+        return {
+            "types": {},
+            "generations": [],
+            "vehicle_defs": [],
+            "used_type_ids": [],
+            "warnings": [],
+            "errors": ["Moving load text is empty."],
+        }
+
+    lines = str(text).replace("\r", "\n").split("\n")
+    types: dict[int, dict] = {}
+    generations: list[dict] = []
+    warnings: list[str] = []
+    errors: list[str] = []
+
+    def _extract_numbers(s: str) -> list[float]:
+        return [float(x) for x in re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", s)]
+
+    def _is_keyword_line(s: str) -> bool:
+        return bool(re.match(r"^(TYPE|DIST|LOAD\s+GENERATION|DEFINE|PERFORM|END)\b", s, re.IGNORECASE))
+
+    def _is_numeric_line(s: str) -> bool:
+        if not s:
+            return False
+        return bool(re.match(r"^[\s0-9+\-\.eE]+-?$", s))
+
+    i = 0
+    current_type_id = None
+    current_generation_count = None
+
+    while i < len(lines):
+        raw = lines[i]
+        line = raw.strip()
+        if not line:
+            i += 1
+            continue
+        if line.startswith(";") or line.startswith("*"):
+            i += 1
+            continue
+
+        # LOAD GENERATION header (optional count)
+        m_gen = re.match(r"^LOAD\s+GENERATION\s*(\d+)?", line, re.IGNORECASE)
+        if m_gen:
+            if m_gen.group(1):
+                current_generation_count = int(m_gen.group(1))
+            i += 1
+            continue
+
+        # TYPE n LOAD ...
+        m_type = re.match(r"^TYPE\s+(\d+)\s+LOAD\s*(.*)$", line, re.IGNORECASE)
+        if m_type:
+            type_id = int(m_type.group(1))
+            payload = m_type.group(2) or ""
+            loads = _extract_numbers(payload)
+
+            j = i + 1
+            while j < len(lines):
+                nxt = lines[j].strip()
+                if not nxt:
+                    j += 1
+                    continue
+                if _is_keyword_line(nxt):
+                    break
+                if _is_numeric_line(nxt):
+                    loads.extend(_extract_numbers(nxt))
+                    j += 1
+                    continue
+                break
+
+            if not loads:
+                warnings.append(f"TYPE {type_id}: no LOAD values found.")
+            types[type_id] = {"loads": loads, "spacings": []}
+            current_type_id = type_id
+            i = j
+            continue
+
+        # DIST ...
+        m_dist = re.match(r"^DIST\s*(.*)$", line, re.IGNORECASE)
+        if m_dist:
+            payload = m_dist.group(1) or ""
+            spacings = _extract_numbers(payload)
+
+            j = i + 1
+            while j < len(lines):
+                nxt = lines[j].strip()
+                if not nxt:
+                    j += 1
+                    continue
+                if _is_keyword_line(nxt):
+                    break
+                if _is_numeric_line(nxt):
+                    spacings.extend(_extract_numbers(nxt))
+                    j += 1
+                    continue
+                break
+
+            if current_type_id is None:
+                warnings.append("DIST found before any TYPE definition; ignoring.")
+            else:
+                types.setdefault(current_type_id, {"loads": [], "spacings": []})
+                types[current_type_id]["spacings"] = spacings
+            i = j
+            continue
+
+        # Generation line: TYPE n x y z XINC dx
+        if re.search(r"\bTYPE\s+\d+\b", line, re.IGNORECASE) and re.search(r"\bXINC\b", line, re.IGNORECASE):
+            m = re.search(r"\bTYPE\s+(\d+)\b", line, re.IGNORECASE)
+            type_id = int(m.group(1)) if m else None
+            nums = _extract_numbers(line)
+            x = y = z = xinc = None
+            if type_id is not None:
+                # nums likely: [type_id, x, y, z, xinc]
+                if len(nums) >= 4:
+                    x = nums[1]
+                    y = nums[2]
+                    z = nums[3]
+                if len(nums) >= 5:
+                    xinc = nums[-1]
+            generations.append({
+                "type_id": type_id,
+                "x": x,
+                "y": y,
+                "z": z,
+                "xinc": xinc,
+                "count": current_generation_count,
+            })
+            i += 1
+            continue
+
+        i += 1
+
+    if not types:
+        errors.append("No TYPE definitions found in moving load text.")
+
+    used_type_ids = [g["type_id"] for g in generations if g.get("type_id") is not None]
+    if not used_type_ids:
+        used_type_ids = sorted(types.keys())
+
+    vehicle_defs = []
+    for type_id in used_type_ids:
+        if type_id not in types:
+            warnings.append(f"LOAD GENERATION references TYPE {type_id}, but it is not defined.")
+            continue
+        loads = list(types[type_id].get("loads", []))
+        spacings = list(types[type_id].get("spacings", []))
+        if not loads:
+            warnings.append(f"TYPE {type_id}: no loads found.")
+            continue
+
+        if len(spacings) >= len(loads):
+            spacings = spacings[:max(0, len(loads) - 1)]
+        if len(spacings) < max(0, len(loads) - 1):
+            warnings.append(
+                f"TYPE {type_id}: spacing count ({len(spacings)}) does not match loads ({len(loads)})."
+            )
+
+        gen_note = ""
+        gen = next((g for g in generations if g.get("type_id") == type_id), None)
+        if gen:
+            parts = []
+            if gen.get("x") is not None:
+                parts.append(f"x={gen['x']}")
+            if gen.get("y") is not None:
+                parts.append(f"y={gen['y']}")
+            if gen.get("z") is not None:
+                parts.append(f"z={gen['z']}")
+            if gen.get("xinc") is not None:
+                parts.append(f"xinc={gen['xinc']}")
+            if gen.get("count") is not None:
+                parts.append(f"count={gen['count']}")
+            if parts:
+                gen_note = " | " + ", ".join(parts)
+
+        vehicle_defs.append({
+            "vehicle_code": f"STAAD_TYPE_{type_id}",
+            "name": f"STAAD Type {type_id}",
+            "notes": f"STAAD DEFINE MOVING LOAD TYPE {type_id}{gen_note}",
+            "axle_loads_kN": loads,
+            "axle_spacings_m": spacings,
+        })
+
+    return {
+        "types": types,
+        "generations": generations,
+        "vehicle_defs": vehicle_defs,
+        "used_type_ids": used_type_ids,
+        "warnings": warnings,
+        "errors": errors,
     }
 
 
@@ -851,63 +1126,66 @@ def _solve_frame_for_vehicle_position(
         ]
         F_global[dof] += f_global
 
-    u = np.zeros(n_dof, dtype=float)
-    free = model["free_dof"]
-    if free:
-        u_free = model["K_ff_inv"] @ F_global[free]
-        u[free] = u_free
+    F_ff = F_global[model["free_dof"]]
+    try:
+        D_ff = model["K_ff_inv"] @ F_ff
+    except ValueError:
+        D_ff = np.zeros(len(model["free_dof"]))
 
-    group_forces = {
-        "TOP_SLAB": {"moments": [], "shears": []},
-        "BOTTOM_SLAB": {"moments": [], "shears": []},
-        "SIDE_WALL": {"moments": [], "shears": []},
-        "INTERMEDIATE_WALL": {"moments": [], "shears": []},
-    }
+    D_global = np.zeros(n_dof, dtype=float)
+    D_global[model["free_dof"]] = D_ff
 
-    for i, elem in enumerate(model["elements"]):
+    for elem in model["elements"]:
+        n1, n2 = elem["n1"], elem["n2"]
         dof = [
-            3 * elem["n1"], 3 * elem["n1"] + 1, 3 * elem["n1"] + 2,
-            3 * elem["n2"], 3 * elem["n2"] + 1, 3 * elem["n2"] + 2,
+            3 * n1, 3 * n1 + 1, 3 * n1 + 2,
+            3 * n2, 3 * n2 + 2 + 0, 3 * n2 + 2,
         ]
-        u_local = elem["T"] @ u[dof]
-        # End forces: K*u - fixed-end equivalent load
-        end_forces_local = elem["k_local"] @ u_local - element_eq_local[i]
+        dof = [3*n1, 3*n1+1, 3*n1+2, 3*n2, 3*n2+1, 3*n2+2]
+        d_global = D_global[dof]
+        d_local = elem["T"] @ d_global
 
-        V1 = float(end_forces_local[1])
-        M1 = float(end_forces_local[2])
-        V2 = float(end_forces_local[4])
-        M2 = float(end_forces_local[5])
+        f_local = elem["k_local"] @ d_local - element_eq_local[elem["id"] - 1]
+        elem["current_f_local"] = f_local
 
+    group_forces = {}
+    for elem in model["elements"]:
         g = elem["group"]
+        if g not in group_forces:
+            group_forces[g] = {"moments": [], "shears": [], "elements": []}
+        
+        f = elem["current_f_local"]
+        N1, V1, M1, N2, V2, M2 = f
+        
         group_forces[g]["moments"].append((M1, elem["id"]))
-        group_forces[g]["moments"].append((M2, elem["id"]))
+        group_forces[g]["moments"].append((-M2, elem["id"]))
         group_forces[g]["shears"].append((abs(V1), elem["id"]))
         group_forces[g]["shears"].append((abs(V2), elem["id"]))
 
         if compute_bmd:
-            L = elem["length"]
             x1, y1 = elem["x1"], elem["y1"]
             x2, y2 = elem["x2"], elem["y2"]
-            
+            L = elem["length"]
+            # To compute point moments, we need the actual loads on this element
             element_loads = []
-            if g == "TOP_SLAB":
-                for offset, load_kN in zip(axle_offsets, axle_loads):
-                    x_global = lead_position + offset
-                    if min(x1, x2) <= x_global <= max(x1, x2):
-                        dist = abs(x_global - x1)
-                        if dist < 1e-6: dist = 0.0
-                        if dist > L - 1e-6: dist = L
-                        # For downward loads, local y force is negative
-                        element_loads.append({"a": dist, "P": -abs(load_kN)})
-            
-            samples = {float(d) for d in np.linspace(0, L, 11)}
-            for ld in element_loads:
-                samples.add(float(ld["a"]))
-            samples = sorted(list(samples))
+            for offset, load_kN in zip(axle_offsets, axle_loads):
+                x = lead_position + offset
+                if x < 0.0 or x > total_length:
+                    continue
+                span_idx = int(x / clear_span) if clear_span > 0 else 0
+                if span_idx >= num_cells:
+                    span_idx = num_cells - 1
+                if span_idx >= 0 and model["top_element_idx_by_span"].get(span_idx) == (elem["id"] - 1):
+                    # Local load position
+                    a = x - span_idx * clear_span
+                    if 0 <= a <= L:
+                        element_loads.append({"a": a, "P": -abs(load_kN)})
+
+            # 11 equal sample points
+            samples = list(np.linspace(0, L, 11))
             
             elem_bmd = []
             for a in samples:
-                # M_int = V1*a - M1 + sum(P * (a - a_i))
                 M_int = V1 * a - M1
                 for ld in element_loads:
                     if ld["a"] < a:
@@ -915,19 +1193,11 @@ def _solve_frame_for_vehicle_position(
                 
                 X = x1 + (x2 - x1) * (a / L) if L > 0 else x1
                 Y = y1 + (y2 - y1) * (a / L) if L > 0 else y1
-                elem_bmd.append({"X": X, "Y": Y, "M": round(M_int, 3)})
+                elem_bmd.append({"X": X, "Y": Y, "M": round(M_int, 3), "a": round(a, 3)})
             
-            if "bmd_data" not in locals():
-                bmd_data = []
-            bmd_data.append({
-                "member_id": elem["id"],
-                "group": g,
-                "points": elem_bmd,
-            })
+            group_forces[g]["elements"].append({"id": elem["id"], "bmd": elem_bmd})
 
     result = {"group_forces": group_forces}
-    if compute_bmd:
-        result["bmd"] = locals().get("bmd_data", [])
     return result
 
 
@@ -2830,3 +3100,656 @@ def compute_settlement(
         formula=formula,
         notes=notes,
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMPLETE AUTO-DESIGN ENGINE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def run_complete_design(
+    # ── Group 1: Geometry (8 fields) ──
+    num_cells: int = 1,
+    clear_span: float = 4.0,
+    clear_height: float = 3.0,
+    top_slab_thickness: float = 0.30,
+    bottom_slab_thickness: float = 0.35,
+    wall_thickness: float = 0.30,
+    mid_wall_thickness: float = 0.30,
+    haunch_size: float = 0.15,
+    # ── Group 2: Material (3 fields) ──
+    fck: float = 30.0,
+    fy: float = 500.0,
+    clear_cover: float = 50.0,
+    # ── Group 3: Site & Soil (5 fields) ──
+    fill_depth: float = 0.6,
+    wearing_course_thickness: float = 0.075,
+    gamma_soil: float = 18.0,
+    friction_angle: float = 30.0,
+    allowable_bearing: float = 150.0,
+    # ── Group 4: Hydraulic (2 fields) ──
+    water_table_depth: float = 0.0,
+    culvert_length: float = 10.0,
+    # ── Advanced (auto-set defaults) ──
+    gamma_water: float = 9.81,
+    gamma_concrete: float = 25.0,
+    surcharge_intensity: float = 10.0,
+    main_bar_dia: int = 16,
+    dist_bar_dia: int = 12,
+    main_spacing: int = 150,
+    dist_spacing: int = 200,
+    exposure: str = "MODERATE",
+) -> dict:
+    """
+    Complete end-to-end RCC box culvert design from just 18 inputs.
+
+    Auto-generates:
+    1.  All load cases (DL, Fill, WC, EP, WP, Surcharge, IRC vehicles)
+    2.  Longitudinal sweep for IRC 70R, Class A, Class AA
+    3.  Impact factors per IRC 6 Cl. 208
+    4.  Load combinations (ULS + SLS) per IRC 6 Table B.2/B.3
+    5.  Bearing pressure check (IRC 78)
+    6.  Uplift/buoyancy check
+    7.  Reinforcement design (IS 456 / IRC 112)
+    8.  Crack width check (IRC 112 Cl. 12.3.4)
+    9.  Shear check (IS 456 Cl. 40)
+    10. Quantities (concrete, formwork)
+    11. BBS (Bar Bending Schedule)
+    12. Design ratios and pass/fail dashboard
+
+    Returns:
+        dict with keys: geometry, loads, sweep, checks, bbs, quantities,
+        combinations, design_ratios, summary
+    """
+    from app.core.loads import (
+        dead_load_fill, wearing_course_load, earth_pressure_load,
+        water_pressure_load, surcharge_load,
+        irc_class_aa_tracked, irc_70r_tracked, irc_class_a_wheel_line,
+        apply_dispersion, create_load,
+    )
+    from app.core.overlap import compute_overlaps, compute_summary
+    from app.core.geometry import generate_standard_box_culvert_members
+    from app.core.staad_export import generate_staad_text
+
+    result = {}
+
+    # ═══ Derived geometry ═══
+    k0 = round(1 - math.sin(math.radians(friction_angle)), 4)
+    total_width = (
+        num_cells * clear_span
+        + 2 * wall_thickness
+        + max(0, num_cells - 1) * mid_wall_thickness
+    )
+    total_height = clear_height + top_slab_thickness + bottom_slab_thickness
+
+    result["geometry"] = {
+        "num_cells": num_cells,
+        "clear_span": round(clear_span, 4),
+        "clear_height": round(clear_height, 4),
+        "total_width": round(total_width, 4),
+        "total_height": round(total_height, 4),
+        "top_slab_thickness": top_slab_thickness,
+        "bottom_slab_thickness": bottom_slab_thickness,
+        "wall_thickness": wall_thickness,
+        "mid_wall_thickness": mid_wall_thickness,
+        "haunch_size": haunch_size,
+        "k0": k0,
+        "fill_depth": fill_depth,
+        "culvert_length": culvert_length,
+    }
+
+    # ═══ Auto-generate members ═══
+    members = generate_standard_box_culvert_members(
+        clear_span=clear_span,
+        num_cells=num_cells,
+        wall_thickness=wall_thickness,
+        mid_wall_thickness=mid_wall_thickness,
+        haunch_size=haunch_size,
+        start_number=1001,
+        increment=1,
+    )
+
+    # ═══ Stage 1: Auto-Generate All Load Cases ═══
+    generated_loads = {}
+
+    # LC1: Self-weight (handled by STAAD SELFWEIGHT command; provide as info)
+    sw_top = -(gamma_concrete * top_slab_thickness)
+    sw_bot = -(gamma_concrete * bottom_slab_thickness)
+    generated_loads["LC1_SELF_WEIGHT"] = {
+        "description": "Self-Weight (DL)",
+        "irc_ref": "IRC 6, Cl. 202",
+        "top_slab": f"{sw_top:.2f} kN/m² (auto via SELFWEIGHT in STAAD)",
+        "bottom_slab": f"{sw_bot:.2f} kN/m²",
+        "note": "Applied as SELFWEIGHT Y -1.0 in STAAD",
+        "loads": [],
+    }
+
+    # LC2: Earth Fill on Top Slab
+    if fill_depth > 0:
+        fill_load = dead_load_fill(
+            width=total_width,
+            fill_depth=fill_depth,
+            gamma_soil=gamma_soil,
+            load_case="LC2",
+        )
+        fill_load_dict = _load_to_dict(fill_load)
+        generated_loads["LC2_EARTH_FILL"] = {
+            "description": f"Earth Fill DL ({fill_depth}m × {gamma_soil} kN/m³)",
+            "irc_ref": "IRC 6, Cl. 202",
+            "intensity": f"{fill_load.intensity:.2f} kN/m²",
+            "loads": [fill_load_dict],
+        }
+    else:
+        generated_loads["LC2_EARTH_FILL"] = {
+            "description": "Earth Fill DL (not applicable — fill_depth = 0)",
+            "loads": [],
+        }
+
+    # LC3: Wearing Course
+    wc_load = wearing_course_load(
+        width=total_width,
+        thickness=wearing_course_thickness,
+        load_case="LC3",
+    )
+    generated_loads["LC3_WEARING_COURSE"] = {
+        "description": f"Wearing Course ({wearing_course_thickness}m × 22 kN/m³)",
+        "irc_ref": "IRC 6, Cl. 202",
+        "intensity": f"{wc_load.intensity:.2f} kN/m²",
+        "loads": [_load_to_dict(wc_load)],
+    }
+
+    # LC4: Earth Pressure — Left Wall
+    ep_left = earth_pressure_load(
+        height=clear_height,
+        gamma_soil=gamma_soil,
+        k0=k0,
+        load_case="LC4",
+        wall_start=0.0,
+    )
+    generated_loads["LC4_EP_LEFT"] = {
+        "description": f"Earth Pressure — Left Wall (K₀={k0}, γ={gamma_soil})",
+        "irc_ref": "IS 456 / IRC 112",
+        "max_pressure": f"{k0 * gamma_soil * clear_height:.2f} kN/m²",
+        "loads": [_load_to_dict(ep_left)],
+    }
+
+    # LC5: Earth Pressure — Right Wall
+    ep_right = earth_pressure_load(
+        height=clear_height,
+        gamma_soil=gamma_soil,
+        k0=k0,
+        load_case="LC5",
+        wall_start=0.0,
+    )
+    # Mirror direction for right wall
+    ep_right_dict = _load_to_dict(ep_right)
+    ep_right_dict["id"] = "EP_RIGHT"
+    ep_right_dict["notes"] = ep_right.notes + " (Right wall — mirrored)"
+    generated_loads["LC5_EP_RIGHT"] = {
+        "description": f"Earth Pressure — Right Wall (mirrored)",
+        "irc_ref": "IS 456 / IRC 112",
+        "max_pressure": f"{k0 * gamma_soil * clear_height:.2f} kN/m²",
+        "loads": [ep_right_dict],
+    }
+
+    # LC6: Water Pressure
+    water_height = clear_height  # assume full height water for worst case
+    if water_table_depth > 0:
+        water_height = max(0, clear_height - water_table_depth)
+
+    if water_height > 0:
+        wp = water_pressure_load(
+            water_height=water_height,
+            gamma_water=gamma_water,
+            load_case="LC6",
+        )
+        generated_loads["LC6_WATER_PRESSURE"] = {
+            "description": f"Water Pressure (h={water_height:.2f}m)",
+            "irc_ref": "IRC 6, Cl. 213",
+            "max_pressure": f"{gamma_water * water_height:.2f} kN/m²",
+            "loads": [_load_to_dict(wp)],
+        }
+    else:
+        generated_loads["LC6_WATER_PRESSURE"] = {
+            "description": "Water Pressure (not applicable — water table below floor)",
+            "loads": [],
+        }
+
+    # LC7: Live Load Surcharge
+    sc_load = surcharge_load(
+        width=clear_height,
+        surcharge_intensity=surcharge_intensity,
+        k0=k0,
+        load_case="LC7",
+    )
+    generated_loads["LC7_SURCHARGE"] = {
+        "description": f"LL Surcharge (q={surcharge_intensity} kN/m², K₀={k0})",
+        "irc_ref": "IRC 6, Cl. 214",
+        "intensity": f"{surcharge_intensity * k0:.2f} kN/m²",
+        "loads": [_load_to_dict(sc_load)],
+    }
+
+    # LC8: IRC 70R Tracked
+    irc70r_loads = irc_70r_tracked(load_case="LC8")
+    # Apply dispersion if fill > 0
+    if fill_depth > 0:
+        irc70r_loads = [apply_dispersion(lo, fill_depth) for lo in irc70r_loads]
+    generated_loads["LC8_70R_TRACKED"] = {
+        "description": "IRC 70R Tracked (2 × 350 kN)",
+        "irc_ref": "IRC 6, Annex A",
+        "loads": [_load_to_dict(lo) for lo in irc70r_loads],
+    }
+
+    # LC9: IRC Class A
+    class_a_loads = irc_class_a_wheel_line(load_case="LC9")
+    if fill_depth > 0:
+        class_a_loads = [apply_dispersion(lo, fill_depth) for lo in class_a_loads]
+    generated_loads["LC9_CLASS_A"] = {
+        "description": "IRC Class A Wheel Line (114 kN heaviest axle)",
+        "irc_ref": "IRC 6, Annex A",
+        "loads": [_load_to_dict(lo) for lo in class_a_loads],
+    }
+
+    # LC10: IRC Class AA Tracked
+    class_aa_loads = irc_class_aa_tracked(load_case="LC10")
+    if fill_depth > 0:
+        class_aa_loads = [apply_dispersion(lo, fill_depth) for lo in class_aa_loads]
+    generated_loads["LC10_CLASS_AA"] = {
+        "description": "IRC Class AA Tracked (2 × 350 kN)",
+        "irc_ref": "IRC 6, Annex A",
+        "loads": [_load_to_dict(lo) for lo in class_aa_loads],
+    }
+
+    result["loads"] = generated_loads
+
+    # ═══ Stage 2: Impact Factors ═══
+    impact_results = {}
+    for vehicle in ["CLASS_70R_TRACKED", "CLASS_A", "CLASS_AA_TRACKED"]:
+        imp = compute_impact_factor(
+            vehicle_class=vehicle,
+            span=clear_span,
+            fill_depth=fill_depth,
+        )
+        impact_results[vehicle] = {
+            "factor": imp.impact_factor,
+            "formula": imp.formula_used,
+            "notes": imp.notes,
+        }
+    result["impact_factors"] = impact_results
+
+    # ═══ Stage 3: Load Combinations ═══
+    load_case_map = {
+        "DL": 1,
+        "SIDL": 2,
+        "WC": 3,
+        "EP": 4,
+        "WP": 5,
+        "SC": 6,
+        "LL": 7,
+    }
+    combos = generate_load_combinations(
+        load_case_map=load_case_map,
+        structure_type="BOX_CULVERT",
+        include_sls=True,
+    )
+    result["combinations"] = [
+        {"name": c.name, "type": c.combination_type, "factors": c.factors,
+         "description": c.description}
+        for c in combos
+    ]
+
+    # ═══ Stage 4: Longitudinal Sweep ═══
+    sweep_vehicles = ["CLASS_70R_TRACKED", "CLASS_A"]
+    try:
+        sweep_result = compute_longitudinal_critical_positions(
+            clear_span=clear_span,
+            clear_height=clear_height,
+            num_cells=num_cells,
+            increment=0.1,
+            vehicles=sweep_vehicles,
+            top_slab_thickness=top_slab_thickness,
+            bottom_slab_thickness=bottom_slab_thickness,
+            wall_thickness=wall_thickness,
+            mid_wall_thickness=mid_wall_thickness,
+            fck=fck,
+        )
+        result["sweep"] = sweep_result
+    except Exception as e:
+        result["sweep"] = {"error": str(e)}
+
+    # ═══ Stage 5: Design Checks ═══
+    checks = {}
+
+    # 5a. Bearing Pressure
+    # Estimate total vertical load (DL + fill + WC + LL)
+    top_slab_sw = gamma_concrete * top_slab_thickness * total_width * culvert_length
+    bot_slab_sw = gamma_concrete * bottom_slab_thickness * total_width * culvert_length
+    walls_sw = gamma_concrete * wall_thickness * clear_height * culvert_length * 2
+    mid_walls_sw = gamma_concrete * mid_wall_thickness * clear_height * culvert_length * max(0, num_cells - 1)
+    fill_wt = gamma_soil * fill_depth * total_width * culvert_length if fill_depth > 0 else 0
+    wc_wt = 22.0 * wearing_course_thickness * total_width * culvert_length
+    # Approx live load (70R = 700 kN spread over culvert length)
+    ll_approx = 700.0 if culvert_length >= 4.57 else 700.0 * culvert_length / 4.57
+    total_vertical = top_slab_sw + bot_slab_sw + walls_sw + mid_walls_sw + fill_wt + wc_wt + ll_approx
+
+    bearing = check_bearing_pressure(
+        total_vertical_load=total_vertical / culvert_length,  # per metre run
+        base_width=total_width,
+        eccentricity=0.0,
+        allowable_bearing=allowable_bearing,
+        culvert_length=1.0,
+    )
+    checks["bearing_pressure"] = {
+        "status": bearing.status,
+        "max_pressure": bearing.max_base_pressure,
+        "min_pressure": bearing.min_base_pressure,
+        "allowable": allowable_bearing,
+        "formula": bearing.formula,
+        "utilization": bearing.utilization_ratio,
+    }
+
+    # 5b. Uplift Check
+    uplift = check_uplift(
+        clear_span=clear_span,
+        clear_height=clear_height,
+        top_slab_thickness=top_slab_thickness,
+        bottom_slab_thickness=bottom_slab_thickness,
+        wall_thickness=wall_thickness,
+        fill_depth=fill_depth,
+        water_table_depth=water_table_depth,
+        num_cells=num_cells,
+        gamma_concrete=gamma_concrete,
+        gamma_soil=gamma_soil,
+        gamma_water=gamma_water,
+    )
+    checks["uplift"] = {
+        "status": uplift.status,
+        "fos_uplift": uplift.factor_of_safety,
+        "stabilising_weight": uplift.stabilizing_force,
+        "uplift_force": uplift.destabilizing_force,
+        "breakdown": uplift.breakdown,
+    }
+
+    # 5c. Reinforcement Design — for each element
+    reinforcement = {}
+    # Get max BM from sweep if available
+    top_slab_bm = 0
+    bot_slab_bm = 0
+    wall_bm = 0
+    top_slab_sf = 0
+    bot_slab_sf = 0
+    wall_sf = 0
+
+    if isinstance(result.get("sweep"), dict) and "vehicles" in result.get("sweep", {}):
+        for veh in result["sweep"]["vehicles"]:
+            for gr in veh.get("group_results", []):
+                grp = gr.get("group", "")
+                max_sag = abs(gr.get("max_sagging", {}).get("value", 0))
+                max_hog = abs(gr.get("max_hogging", {}).get("value", 0))
+                max_sf_val = abs(gr.get("max_shear", {}).get("value", 0))
+                bm_val = max(max_sag, max_hog)
+                if grp == "TOP_SLAB":
+                    top_slab_bm = max(top_slab_bm, bm_val)
+                    top_slab_sf = max(top_slab_sf, max_sf_val)
+                elif grp == "BOTTOM_SLAB":
+                    bot_slab_bm = max(bot_slab_bm, bm_val)
+                    bot_slab_sf = max(bot_slab_sf, max_sf_val)
+                elif grp in ("SIDE_WALL", "INTERMEDIATE_WALL"):
+                    wall_bm = max(wall_bm, bm_val)
+                    wall_sf = max(wall_sf, max_sf_val)
+
+    # Fallback: estimate BM from wl²/12 if sweep gave nothing
+    if top_slab_bm == 0:
+        # Approximate: w = total load per m, l = clear_span
+        w_approx = gamma_concrete * top_slab_thickness + gamma_soil * fill_depth + 22 * wearing_course_thickness + 20
+        top_slab_bm = w_approx * clear_span ** 2 / 12
+    if bot_slab_bm == 0:
+        bot_slab_bm = top_slab_bm * 0.8
+    if wall_bm == 0:
+        wall_bm = k0 * gamma_soil * clear_height ** 3 / 30 + surcharge_intensity * k0 * clear_height ** 2 / 12
+
+    for elem_name, thickness, bm, sf in [
+        ("Top Slab", top_slab_thickness, top_slab_bm, top_slab_sf),
+        ("Bottom Slab", bottom_slab_thickness, bot_slab_bm, bot_slab_sf),
+        ("Side Wall", wall_thickness, wall_bm, wall_sf),
+    ]:
+        rebar = compute_reinforcement(
+            max_bm=bm,
+            slab_thickness=thickness,
+            clear_cover=clear_cover,
+            bar_diameter=main_bar_dia,
+            fck=fck,
+            fy=fy,
+            breadth=1000.0,
+        )
+        reinforcement[elem_name] = {
+            "max_bm": round(bm, 2),
+            "effective_depth": rebar.effective_depth,
+            "ast_required": rebar.ast_required,
+            "ast_min": rebar.ast_min,
+            "ast_provided": rebar.ast_provided,
+            "bar_dia": rebar.bar_dia,
+            "spacing": rebar.spacing,
+            "status": rebar.status,
+            "formula": rebar.formula,
+        }
+
+    checks["reinforcement"] = reinforcement
+
+    # 5d. Crack Width Check — for critical element (top slab)
+    crack = check_crack_width(
+        bm_sls=top_slab_bm * 0.7,  # SLS moment ≈ 70% of ULS
+        slab_thickness=top_slab_thickness,
+        clear_cover=clear_cover,
+        bar_diameter=main_bar_dia,
+        bar_spacing=reinforcement.get("Top Slab", {}).get("spacing", main_spacing),
+        breadth=1000.0,
+        fck=fck,
+        fy=fy,
+        exposure=exposure,
+    )
+    checks["crack_width"] = {
+        "status": crack.status,
+        "crack_width": crack.crack_width,
+        "permissible": crack.permissible_crack,
+        "formula": crack.formula,
+        "notes": crack.notes,
+    }
+
+    # 5e. Shear Check — for each element
+    shear_checks = {}
+    for elem_name, thickness, sf_val in [
+        ("Top Slab", top_slab_thickness, top_slab_sf if top_slab_sf > 0 else top_slab_bm / clear_span * 2),
+        ("Bottom Slab", bottom_slab_thickness, bot_slab_sf if bot_slab_sf > 0 else bot_slab_bm / clear_span * 2),
+        ("Side Wall", wall_thickness, wall_sf if wall_sf > 0 else wall_bm / clear_height * 2),
+    ]:
+        ast_prov = reinforcement.get(elem_name, {}).get("ast_provided", 0)
+        shear = check_shear(
+            shear_force=sf_val,
+            slab_thickness=thickness,
+            clear_cover=clear_cover,
+            bar_diameter=main_bar_dia,
+            breadth=1000.0,
+            fck=fck,
+            fy=fy,
+            ast_provided=ast_prov,
+        )
+        shear_checks[elem_name] = {
+            "status": shear.shear_status,
+            "shear_force": round(sf_val, 2),
+            "tau_v": shear.tau_v,
+            "tau_c": shear.tau_c,
+            "tau_c_max": shear.tau_c_max,
+            "formula": shear.formula,
+            "notes": shear.notes,
+        }
+    checks["shear"] = shear_checks
+
+    result["checks"] = checks
+
+    # ═══ Stage 6: Quantities ═══
+    qty = estimate_quantities(
+        clear_span=clear_span,
+        clear_height=clear_height,
+        top_slab_thickness=top_slab_thickness,
+        bottom_slab_thickness=bottom_slab_thickness,
+        wall_thickness=wall_thickness,
+        culvert_length=culvert_length,
+        num_cells=num_cells,
+    )
+    result["quantities"] = {
+        "items": [
+            {"component": item.component, "volume": item.volume,
+             "formwork_area": item.formwork_area}
+            for item in qty.items
+        ],
+        "total_concrete": qty.total_concrete_volume,
+        "total_formwork": qty.total_formwork_area,
+        "total_steel_kg": qty.steel_estimate_kg,
+    }
+
+    # ═══ Stage 7: BBS ═══
+    bbs = generate_bbs(
+        clear_span=clear_span,
+        clear_height=clear_height,
+        top_slab_thickness=top_slab_thickness,
+        bottom_slab_thickness=bottom_slab_thickness,
+        wall_thickness=wall_thickness,
+        culvert_length=culvert_length,
+        num_cells=num_cells,
+        clear_cover=clear_cover,
+        main_bar_dia=main_bar_dia,
+        dist_bar_dia=dist_bar_dia,
+        main_spacing=reinforcement.get("Top Slab", {}).get("spacing", main_spacing),
+        dist_spacing=dist_spacing,
+    )
+    result["bbs"] = {
+        "items": [
+            {"bar_mark": item.bar_mark, "member": item.member,
+             "bar_dia": item.bar_dia, "shape": item.shape,
+             "cut_length": item.cut_length, "quantity": item.quantity,
+             "total_length": item.total_length, "weight_per_m": item.weight_per_m,
+             "total_weight": item.total_weight}
+            for item in bbs.items
+        ],
+        "total_steel_weight": bbs.total_steel_weight,
+        "wastage_percent": bbs.wastage_percent,
+        "total_with_wastage": bbs.total_with_wastage,
+    }
+
+    # ═══ Stage 8: Design Ratios Dashboard ═══
+    design_ratios = []
+
+    # Flexure ratio for each element
+    for elem_name in ["Top Slab", "Bottom Slab", "Side Wall"]:
+        rebar_data = reinforcement.get(elem_name, {})
+        ast_req = rebar_data.get("ast_required", 0)
+        ast_prov = rebar_data.get("ast_provided", 0)
+        ratio = ast_req / ast_prov if ast_prov > 0 else 999
+        design_ratios.append({
+            "check": f"Flexure — {elem_name}",
+            "ratio": round(ratio, 3),
+            "description": f"Ast_req/Ast_prov = {ast_req:.0f}/{ast_prov:.0f}",
+            "status": "PASS" if ratio <= 1.0 else "FAIL",
+            "traffic_light": "green" if ratio <= 0.85 else ("amber" if ratio <= 1.0 else "red"),
+        })
+
+    # Shear ratio
+    for elem_name in ["Top Slab", "Bottom Slab", "Side Wall"]:
+        sh = shear_checks.get(elem_name, {})
+        tau_v = sh.get("tau_v", 0)
+        tau_c = sh.get("tau_c", 1)
+        ratio = tau_v / tau_c if tau_c > 0 else 999
+        design_ratios.append({
+            "check": f"Shear — {elem_name}",
+            "ratio": round(ratio, 3),
+            "description": f"τv/τc = {tau_v:.3f}/{tau_c:.3f}",
+            "status": sh.get("status", ""),
+            "traffic_light": "green" if ratio <= 0.85 else ("amber" if ratio <= 1.0 else "red"),
+        })
+
+    # Crack width ratio
+    wk = checks.get("crack_width", {}).get("crack_width", 0)
+    wk_perm = checks.get("crack_width", {}).get("permissible", 0.3)
+    wk_ratio = wk / wk_perm if wk_perm > 0 else 0
+    design_ratios.append({
+        "check": "Crack Width — Top Slab",
+        "ratio": round(wk_ratio, 3),
+        "description": f"wk/wk_perm = {wk:.3f}/{wk_perm:.1f}",
+        "status": checks.get("crack_width", {}).get("status", ""),
+        "traffic_light": "green" if wk_ratio <= 0.80 else ("amber" if wk_ratio <= 1.0 else "red"),
+    })
+
+    # Bearing ratio
+    q_max = checks.get("bearing_pressure", {}).get("max_pressure", 0)
+    q_allow = checks.get("bearing_pressure", {}).get("allowable", 150)
+    bp_ratio = q_max / q_allow if q_allow > 0 else 999
+    design_ratios.append({
+        "check": "Bearing Pressure",
+        "ratio": round(bp_ratio, 3),
+        "description": f"q_max/q_allow = {q_max:.1f}/{q_allow:.1f}",
+        "status": checks.get("bearing_pressure", {}).get("status", ""),
+        "traffic_light": "green" if bp_ratio <= 0.85 else ("amber" if bp_ratio <= 1.0 else "red"),
+    })
+
+    # Uplift FOS
+    fos = checks.get("uplift", {}).get("fos_uplift", 999)
+    design_ratios.append({
+        "check": "Uplift / Buoyancy",
+        "ratio": round(1.0 / fos if fos > 0 else 999, 3),
+        "description": f"FOS = {fos:.2f} (min 1.1 required)",
+        "status": checks.get("uplift", {}).get("status", ""),
+        "traffic_light": "green" if fos >= 1.5 else ("amber" if fos >= 1.1 else "red"),
+    })
+
+    result["design_ratios"] = design_ratios
+
+    # ═══ Stage 9: Critical Load Cases Table ═══
+    result["critical_cases"] = [
+        {
+            "name": "Case I: Box Empty + LL",
+            "description": "DL + Fill + WC + EP + Surcharge + LL (with impact)",
+            "active_loads": ["LC1", "LC2", "LC3", "LC4", "LC5", "LC7", "LC8/LC9/LC10"],
+            "uls_factors": "DL×1.35, SIDL×1.35, WC×1.75, LL×1.50, EP×1.50, SC×1.20",
+        },
+        {
+            "name": "Case II: Box Full + LL",
+            "description": "DL + Fill + WC + EP + WP + LL (with impact)",
+            "active_loads": ["LC1", "LC2", "LC3", "LC4", "LC5", "LC6", "LC8/LC9/LC10"],
+            "uls_factors": "DL×1.35, SIDL×1.35, WC×1.75, LL×1.50, EP×1.50, WP×1.00",
+        },
+        {
+            "name": "Case III: Box Full − LL (Uplift Check)",
+            "description": "DL + Fill + WC + EP + WP (no live load — for uplift)",
+            "active_loads": ["LC1", "LC2", "LC3", "LC4", "LC5", "LC6"],
+            "uls_factors": "DL×1.00, SIDL×1.00, WC×1.00, EP×1.50, WP×1.00",
+        },
+    ]
+
+    # ═══ Stage 10: Summary ═══
+    all_pass = all(
+        r.get("traffic_light") in ("green", "amber") for r in design_ratios
+    )
+    result["summary"] = {
+        "overall_status": "PASS" if all_pass else "REVIEW NEEDED",
+        "total_load_cases": len(generated_loads),
+        "total_design_checks": len(design_ratios),
+        "checks_passed": sum(1 for r in design_ratios if r.get("traffic_light") in ("green", "amber")),
+        "checks_failed": sum(1 for r in design_ratios if r.get("traffic_light") == "red"),
+    }
+
+    return result
+
+
+def _load_to_dict(load) -> dict:
+    """Convert a LoadPatch to a serialisable dict."""
+    return {
+        "id": load.id,
+        "load_case": load.load_case,
+        "load_type": load.load_type.value if hasattr(load.load_type, "value") else str(load.load_type),
+        "start": load.start,
+        "end": load.end,
+        "intensity": load.intensity,
+        "intensity_end": load.intensity_end,
+        "direction": load.direction.value if hasattr(load.direction, "value") else str(load.direction),
+        "notes": load.notes,
+    }

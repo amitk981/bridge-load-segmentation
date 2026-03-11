@@ -111,6 +111,15 @@ class ProjectSettings(BaseModel):
     slab_thickness: float = Field(default=0.3, ge=0, description="Top slab thickness in chosen units")
     bottom_slab_thickness: float = Field(default=0.35, ge=0, description="Bottom slab thickness in chosen units")
     wall_thickness: float = Field(default=0.3, ge=0, description="Wall thickness in chosen units")
+    clear_span: float = Field(default=0.0, ge=0, description="Clear span of one cell")
+    num_cells: int = Field(default=1, ge=1, description="Number of cells for box culvert")
+    mid_wall_thickness: float = Field(default=0.3, ge=0, description="Intermediate wall thickness")
+    haunch_size: float = Field(default=0.0, ge=0, description="Haunch size at slab-wall junction")
+    custom_breakpoints: list[float] = Field(default_factory=list, description="Custom transverse breakpoints (m)")
+    custom_wall_ranges: list[tuple[float, float]] = Field(
+        default_factory=list,
+        description="Custom wall ranges as (start, end) pairs (m)"
+    )
 
     # Settings
     decimal_precision: int = Field(default=2, ge=0, le=6)

@@ -19,6 +19,328 @@ let appMessageTimer = null;
 let liveSweepTimer = null;
 let isAutoSweeping = false;
 
+const STANDARD_BOX_FIELDS = [
+    {
+        id: 'std-clear-span',
+        label: 'Clear Span (m)',
+        type: 'number',
+        step: '0.01',
+        min: '0',
+        targetId: 'clear-span',
+        hint: 'Inner clear span of one cell.',
+    },
+    {
+        id: 'std-clear-height',
+        label: 'Clear Height (m)',
+        type: 'number',
+        step: '0.01',
+        min: '0',
+        targetId: 'culvert-height',
+        hint: 'Inner clear height of the cell.',
+    },
+    {
+        id: 'std-top-slab',
+        label: 'Top Slab Thickness (m)',
+        type: 'number',
+        step: '0.01',
+        min: '0',
+        targetId: 'slab-thickness',
+        hint: 'Top slab thickness from standard or drawing.',
+    },
+    {
+        id: 'std-bottom-slab',
+        label: 'Bottom Slab Thickness (m)',
+        type: 'number',
+        step: '0.01',
+        min: '0',
+        targetId: 'bottom-slab-thickness',
+        hint: 'Bottom slab thickness from standard or drawing.',
+    },
+    {
+        id: 'std-ext-wall',
+        label: 'External Wall Thickness (m)',
+        type: 'number',
+        step: '0.01',
+        min: '0',
+        targetId: 'wall-thickness',
+        hint: 'External wall thickness from standard or drawing.',
+    },
+    {
+        id: 'std-int-wall',
+        label: 'Internal Wall Thickness (m)',
+        type: 'number',
+        step: '0.01',
+        min: '0',
+        targetId: 'mid-wall-thickness',
+        hint: 'Internal wall thickness for multi-cell.',
+    },
+    {
+        id: 'std-haunch',
+        label: 'Haunch Size (m)',
+        type: 'number',
+        step: '0.01',
+        min: '0',
+        targetId: 'haunch-size',
+        hint: 'Haunch/fillet at slab-wall junction.',
+    },
+    {
+        id: 'std-fill-depth',
+        label: 'Fill Depth (m)',
+        type: 'number',
+        step: '0.01',
+        min: '0',
+        targetId: 'fill-depth',
+        hint: 'Fill above top slab (0 = no fill).',
+    },
+];
+
+const GEOMETRY_TEMPLATES = {
+    NONE: { label: 'None (use structure inputs)', auto_apply: false },
+    JOINT_21_6: {
+        label: 'Joint-Based 21.6m (custom breakpoints)',
+        custom_breakpoints: [
+            0, 0.45, 0.95, 5.45, 9.95, 10.45, 10.8, 11.15, 11.65, 16.15, 20.65, 21.15, 21.6
+        ],
+        custom_wall_ranges: [
+            [0, 0.45],
+            [9.95, 10.45],
+            [21.15, 21.6],
+        ],
+    },
+    MORTH_USER: {
+        label: 'MoRTH RCC Box (enter drawing dims)',
+        auto_apply: false,
+        fields: [
+            ...STANDARD_BOX_FIELDS,
+            {
+                id: 'morth-num-cells',
+                label: 'Number of Cells',
+                type: 'number',
+                step: '1',
+                min: '1',
+                targetId: 'num-cells',
+                hint: 'Use 1 for single-cell, 2+ for multi-cell.',
+            },
+        ],
+    },
+    MORTH_RCC_1C: {
+        label: 'MoRTH RCC Box — Single Cell (fields)',
+        auto_apply: true,
+        structure_type: 'BOX_CULVERT_1CELL',
+        settings: { 'num-cells': 1 },
+        fields: STANDARD_BOX_FIELDS,
+    },
+    MORTH_RCC_2C: {
+        label: 'MoRTH RCC Box — Two Cell (fields)',
+        auto_apply: true,
+        structure_type: 'BOX_CULVERT_2CELL',
+        settings: { 'num-cells': 2 },
+        fields: STANDARD_BOX_FIELDS,
+    },
+    MORTH_RCC_3C: {
+        label: 'MoRTH RCC Box — Three Cell (fields)',
+        auto_apply: true,
+        structure_type: 'BOX_CULVERT_3CELL',
+        settings: { 'num-cells': 3 },
+        fields: STANDARD_BOX_FIELDS,
+    },
+    IRC_SP13_1C: {
+        label: 'IRC SP-13 Box Culvert — Single Cell (fields)',
+        auto_apply: true,
+        structure_type: 'BOX_CULVERT_1CELL',
+        settings: { 'num-cells': 1 },
+        fields: STANDARD_BOX_FIELDS,
+    },
+    IRC_SP13_2C: {
+        label: 'IRC SP-13 Box Culvert — Two Cell (fields)',
+        auto_apply: true,
+        structure_type: 'BOX_CULVERT_2CELL',
+        settings: { 'num-cells': 2 },
+        fields: STANDARD_BOX_FIELDS,
+    },
+};
+
+const GEOMETRY_TEMPLATE_ORDER = [
+    'NONE',
+    'JOINT_21_6',
+    'MORTH_USER',
+    'MORTH_RCC_1C',
+    'MORTH_RCC_2C',
+    'MORTH_RCC_3C',
+    'IRC_SP13_1C',
+    'IRC_SP13_2C',
+];
+
+function formatNumber(value, decimals = 3) {
+    if (!Number.isFinite(value)) return '';
+    const fixed = value.toFixed(decimals);
+    return fixed.replace(/\.?0+$/, '');
+}
+
+function formatBreakpoints(values) {
+    if (!Array.isArray(values)) return '';
+    return values.map(v => formatNumber(v, 3)).filter(Boolean).join(', ');
+}
+
+function formatWallRanges(ranges) {
+    if (!Array.isArray(ranges)) return '';
+    return ranges
+        .map(pair => {
+            if (!Array.isArray(pair) || pair.length !== 2) return '';
+            return `${formatNumber(pair[0], 3)}-${formatNumber(pair[1], 3)}`;
+        })
+        .filter(Boolean)
+        .join(', ');
+}
+
+function setInputValueById(id, value) {
+    if (!id) return;
+    const nodes = document.querySelectorAll(`[id="${id}"]`);
+    if (!nodes.length) return;
+    nodes.forEach(node => {
+        if (node && 'value' in node) node.value = value;
+    });
+}
+
+function populateGeometryTemplateOptions() {
+    const select = document.getElementById('geometry-template');
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = '';
+    GEOMETRY_TEMPLATE_ORDER.forEach(key => {
+        const tpl = GEOMETRY_TEMPLATES[key];
+        if (!tpl) return;
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = tpl.label || key;
+        select.appendChild(opt);
+    });
+    if (current && GEOMETRY_TEMPLATES[current]) {
+        select.value = current;
+    } else if (GEOMETRY_TEMPLATE_ORDER.length) {
+        select.value = GEOMETRY_TEMPLATE_ORDER[0];
+    }
+}
+
+function renderGeometryTemplateFields(templateKey) {
+    const container = document.getElementById('geometry-template-fields');
+    const grid = document.getElementById('geometry-template-fields-grid');
+    const applyBtn = document.getElementById('geometry-template-apply');
+    if (!container || !grid || !applyBtn) return;
+
+    const template = GEOMETRY_TEMPLATES[templateKey];
+    const fields = template && Array.isArray(template.fields) ? template.fields : [];
+
+    grid.innerHTML = '';
+    if (!fields.length) {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'block';
+    fields.forEach(field => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'form-group';
+
+        const label = document.createElement('label');
+        label.textContent = field.label || field.id;
+        wrapper.appendChild(label);
+
+        let input;
+        if (field.type === 'select') {
+            input = document.createElement('select');
+            (field.options || []).forEach(opt => {
+                const o = document.createElement('option');
+                o.value = opt.value;
+                o.textContent = opt.label || opt.value;
+                input.appendChild(o);
+            });
+        } else {
+            input = document.createElement('input');
+            input.type = field.type || 'text';
+            if (field.step) input.step = field.step;
+            if (field.min !== undefined) input.min = field.min;
+            if (field.max !== undefined) input.max = field.max;
+            if (field.placeholder) input.placeholder = field.placeholder;
+        }
+
+        input.id = `geometry-template-field-${field.id}`;
+        if (field.targetId) input.dataset.targetId = field.targetId;
+
+        if (field.targetId) {
+            const target = document.querySelector(`[id="${field.targetId}"]`);
+            if (target && target.value !== undefined && target.value !== '') {
+                input.value = target.value;
+            } else if (field.default !== undefined) {
+                input.value = field.default;
+            }
+        } else if (field.default !== undefined) {
+            input.value = field.default;
+        }
+
+        wrapper.appendChild(input);
+
+        if (field.hint) {
+            const hint = document.createElement('span');
+            hint.className = 'field-hint';
+            hint.textContent = field.hint;
+            wrapper.appendChild(hint);
+        }
+
+        grid.appendChild(wrapper);
+    });
+
+    applyBtn.onclick = () => applyGeometryTemplateFields(templateKey);
+}
+
+function applyGeometryTemplate(templateKey) {
+    const template = GEOMETRY_TEMPLATES[templateKey];
+    if (!template) return;
+
+    if (template.custom_breakpoints) {
+        setInputValueById('custom-breakpoints', formatBreakpoints(template.custom_breakpoints));
+    }
+    if (template.custom_wall_ranges) {
+        setInputValueById('custom-wall-ranges', formatWallRanges(template.custom_wall_ranges));
+    }
+    if (template.settings) {
+        Object.entries(template.settings).forEach(([id, value]) => {
+            setInputValueById(id, value);
+        });
+    }
+    if (template.structure_type) {
+        setInputValueById('structure-type', template.structure_type);
+    }
+}
+
+function applyGeometryTemplateFields(templateKey) {
+    const template = GEOMETRY_TEMPLATES[templateKey];
+    if (!template || !Array.isArray(template.fields) || !template.fields.length) return;
+
+    template.fields.forEach(field => {
+        const input = document.getElementById(`geometry-template-field-${field.id}`);
+        if (!input || !field.targetId) return;
+        const raw = String(input.value || '').trim();
+        if (!raw) return;
+        setInputValueById(field.targetId, raw);
+    });
+
+    onDataChanged('settings');
+    if (memberMode === 'auto') generateBoxCulvertMembers();
+}
+
+function handleGeometryTemplateSelection(templateKey) {
+    renderGeometryTemplateFields(templateKey);
+    const template = GEOMETRY_TEMPLATES[templateKey];
+    if (!template || template.auto_apply === false) {
+        onDataChanged('settings');
+        return;
+    }
+    applyGeometryTemplate(templateKey);
+    if (memberMode === 'auto') generateBoxCulvertMembers();
+    onDataChanged('settings');
+}
+
 // ─── Tab Switching ──────────────────────────────────────────────────────────
 
 function switchTab(tabId) {
@@ -47,6 +369,11 @@ function setMemberMode(mode) {
     document.getElementById('member-manual').style.display = mode === 'manual' ? 'block' : 'none';
     document.getElementById('auto-mode-btn').classList.toggle('active', mode === 'auto');
     document.getElementById('manual-mode-btn').classList.toggle('active', mode === 'manual');
+
+    if (mode === 'auto') {
+        const stype = document.getElementById('structure-type')?.value || '';
+        if (stype.startsWith('BOX_CULVERT_')) generateBoxCulvertMembers();
+    }
 }
 
 // ─── Member Table ───────────────────────────────────────────────────────────
@@ -126,6 +453,16 @@ function generateBoxCulvertMembers() {
     const startId    = parseInt(document.getElementById('auto-start-id').value) || 1001;
 
     if (2 * haunch >= clearSpan) haunch = clearSpan / 2.0 - 0.01;
+
+    const customBreakpointsRaw = document.getElementById('custom-breakpoints')?.value || '';
+    const customWallRangesRaw = document.getElementById('custom-wall-ranges')?.value || '';
+    const customBreakpoints = parseNumericList(customBreakpointsRaw);
+    const customWallRanges = parseWallRanges(customWallRangesRaw);
+
+    if (customBreakpoints.length >= 2) {
+        generateMembersFromBreakpoints(customBreakpoints, customWallRanges, startId);
+        return;
+    }
 
     const tbody = document.getElementById('member-tbody');
     tbody.innerHTML = '';
@@ -230,6 +567,398 @@ function generateBoxCulvertMembers() {
     updateCustomWidthsFeedback();
 
     onDataChanged('members');
+}
+
+function generateMembersFromBreakpoints(breakpoints, wallRanges, startId) {
+    const tbody = document.getElementById('member-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    const points = uniqueSorted(breakpoints, 1e-6);
+    if (points.length < 2) {
+        notifyUser('Custom breakpoints need at least two values.', 'warning');
+        return;
+    }
+
+    const minX = points[0];
+    const xs = points.map(x => x - minX);
+    const totalWidth = xs[xs.length - 1];
+
+    const segments = [];
+    for (let i = 0; i < xs.length - 1; i++) {
+        const s = xs[i];
+        const e = xs[i + 1];
+        if (e > s) segments.push({ start: s, end: e, width: e - s });
+    }
+
+    let wallRangesNorm = (wallRanges || []).map(([a, b]) => {
+        const s = Math.min(a, b) - minX;
+        const e = Math.max(a, b) - minX;
+        return [s, e];
+    });
+    if (!wallRangesNorm.length && segments.length >= 2) {
+        wallRangesNorm = [
+            [segments[0].start, segments[0].end],
+            [segments[segments.length - 1].start, segments[segments.length - 1].end],
+        ];
+    }
+    wallRangesNorm.sort((a, b) => a[0] - b[0]);
+
+    const isWallSegment = (seg) => {
+        for (let i = 0; i < wallRangesNorm.length; i++) {
+            const [ws, we] = wallRangesNorm[i];
+            if (seg.start >= ws - 1e-6 && seg.end <= we + 1e-6) return i;
+        }
+        return null;
+    };
+
+    const wallIndexToGroup = (idx) => {
+        if (idx === 0) return 'LEFT_WALL';
+        if (idx === wallRangesNorm.length - 1) return 'RIGHT_WALL';
+        return `MIDDLE_WALL_${Math.min(3, idx)}`;
+    };
+
+    const slabSegments = [];
+    const wallSegments = [];
+    let midWallCount = 0;
+
+    segments.forEach(seg => {
+        const widx = isWallSegment(seg);
+        if (widx === null) {
+            slabSegments.push(seg);
+            return;
+        }
+        let group = wallIndexToGroup(widx);
+        if (group.startsWith('MIDDLE_WALL_')) midWallCount += 1;
+        const label = group === 'LEFT_WALL' ? 'Left Wall'
+            : group === 'RIGHT_WALL' ? 'Right Wall'
+                : `Mid Wall ${midWallCount}`;
+        wallSegments.push({ ...seg, group, label });
+    });
+
+    let currentId = startId;
+    slabSegments.forEach(seg => {
+        addMemberRowWithData(currentId++, seg.start.toFixed(4), seg.end.toFixed(4), seg.width.toFixed(4), 'TOP_SLAB', 'Slab Segment');
+    });
+    slabSegments.forEach(seg => {
+        addMemberRowWithData(currentId++, seg.start.toFixed(4), seg.end.toFixed(4), seg.width.toFixed(4), 'BOTTOM_SLAB', 'Slab Segment');
+    });
+    wallSegments.forEach(seg => {
+        addMemberRowWithData(currentId++, seg.start.toFixed(4), seg.end.toFixed(4), seg.width.toFixed(4), seg.group, seg.label);
+    });
+
+    document.getElementById('total-width').value = totalWidth.toFixed(4);
+    document.getElementById('width-mode').value = 'custom';
+    toggleWidthMode();
+
+    const widthsList = slabSegments.map(s => s.width.toFixed(4)).join(', ');
+    const customWidths = document.getElementById('custom-widths');
+    if (customWidths) customWidths.value = widthsList;
+    updateCustomWidthsFeedback();
+
+    onDataChanged('members');
+}
+
+function importJointCoordinates() {
+    const textarea = document.getElementById('joint-coordinates');
+    if (!textarea) return;
+    const raw = String(textarea.value || '').trim();
+    if (!raw) {
+        notifyUser('Paste joint coordinates first.', 'warning', {
+            hint: 'Use STAAD.Pro JOINT COORDINATES lines like: 1 0.000 10.775 0;'
+        });
+        return;
+    }
+
+    const inferSettings = document.getElementById('joint-infer-settings')?.checked ?? true;
+    const parsed = parseJointCoordinates(raw);
+
+    if (parsed.xs.length < 2) {
+        notifyUser('No valid joint coordinates found.', 'error', {
+            hint: 'Expected lines with id x y z or x y z values.'
+        });
+        return;
+    }
+
+    const tol = 1e-4;
+    const xs = uniqueSorted(parsed.xs, tol);
+    if (xs.length < 2) {
+        notifyUser('Not enough distinct X positions to build members.', 'error');
+        return;
+    }
+
+    const xMin = xs[0];
+    const shifted = xs.map(x => x - xMin);
+    const totalWidth = shifted[shifted.length - 1];
+
+    const segments = [];
+    for (let i = 0; i < shifted.length - 1; i++) {
+        const start = shifted[i];
+        const end = shifted[i + 1];
+        if (end - start > tol) segments.push({ start, end, width: end - start });
+    }
+
+    if (!segments.length) {
+        notifyUser('No valid segment spans found.', 'error');
+        return;
+    }
+
+    // Infer basic structure settings from X/Y coordinates
+    if (inferSettings) {
+        const widths = segments.map(s => roundTo(s.width, 3));
+        const widthCounts = countByKey(widths);
+
+        const clearSpan = inferClearSpan(widthCounts);
+        const numCells = clearSpan ? widths.filter(w => approxEqual(w, clearSpan, 0.02)).length : 1;
+
+        const leftWall = roundTo(segments[0].width, 3);
+        const rightWall = roundTo(segments[segments.length - 1].width, 3);
+        const wallThickness = approxEqual(leftWall, rightWall, 0.02) ? roundTo((leftWall + rightWall) / 2, 3) : leftWall;
+        const midWallThickness = inferMidWall(widthCounts, wallThickness);
+        const haunchSize = inferHaunch(widthCounts, wallThickness, midWallThickness, clearSpan);
+
+        const totalWidthEl = document.getElementById('total-width');
+        if (totalWidthEl) totalWidthEl.value = totalWidth.toFixed(3);
+
+        if (clearSpan) {
+            const clearSpanEl = document.getElementById('clear-span');
+            if (clearSpanEl) clearSpanEl.value = clearSpan.toFixed(3);
+        }
+
+        const numCellsEl = document.getElementById('num-cells');
+        if (numCellsEl) numCellsEl.value = Math.max(1, numCells);
+
+        const wallEl = document.getElementById('wall-thickness');
+        if (wallEl) wallEl.value = wallThickness.toFixed(3);
+
+        const midWallEl = document.getElementById('mid-wall-thickness');
+        if (midWallEl && Number.isFinite(midWallThickness)) midWallEl.value = midWallThickness.toFixed(3);
+
+        const haunchEl = document.getElementById('haunch-size');
+        if (haunchEl && Number.isFinite(haunchSize)) haunchEl.value = haunchSize.toFixed(3);
+
+        const stypeEl = document.getElementById('structure-type');
+        if (stypeEl) {
+            const capped = Math.min(4, Math.max(1, numCells));
+            stypeEl.value = `BOX_CULVERT_${capped}CELL`;
+        }
+
+        const topThk = parseFloat(document.getElementById('slab-thickness')?.value);
+        const botThk = parseFloat(document.getElementById('bottom-slab-thickness')?.value);
+        const ys = uniqueSorted(parsed.ys, tol);
+        if (ys.length >= 2 && Number.isFinite(topThk) && Number.isFinite(botThk)) {
+            const totalH = ys[ys.length - 1] - ys[0];
+            const clearH = totalH - topThk - botThk;
+            if (clearH > 0) {
+                const chEl = document.getElementById('culvert-height');
+                if (chEl) chEl.value = clearH.toFixed(3);
+            }
+        }
+
+        onDataChanged('settings');
+    } else {
+        const totalWidthEl = document.getElementById('total-width');
+        if (totalWidthEl) totalWidthEl.value = totalWidth.toFixed(3);
+    }
+
+    // Build members from segments
+    const startId = parseInt(document.getElementById('auto-start-id')?.value, 10) || 1001;
+    const extWall = parseFloat(document.getElementById('wall-thickness')?.value) || segments[0].width;
+    const midWall = parseFloat(document.getElementById('mid-wall-thickness')?.value) || extWall;
+    const haunch = parseFloat(document.getElementById('haunch-size')?.value) || 0;
+    const clearSpanVal = parseFloat(document.getElementById('clear-span')?.value) || null;
+
+    const rows = [];
+    const slabSegments = [];
+    const wallSegments = [];
+    let midWallIndex = 1;
+
+    segments.forEach((seg, idx) => {
+        if (idx === 0) {
+            wallSegments.push({ ...seg, group: 'LEFT_WALL', label: 'Left Wall' });
+        } else if (idx === segments.length - 1) {
+            wallSegments.push({ ...seg, group: 'RIGHT_WALL', label: 'Right Wall' });
+        } else if (approxEqual(seg.width, midWall, 0.02)) {
+            const wallGroup = `MIDDLE_WALL_${Math.min(3, midWallIndex)}`;
+            wallSegments.push({ ...seg, group: wallGroup, label: `Mid Wall ${midWallIndex}` });
+            midWallIndex += 1;
+        } else {
+            slabSegments.push(seg);
+        }
+    });
+
+    const classifySlabLabel = (seg) => {
+        if (haunch > 0 && approxEqual(seg.width, haunch, 0.02)) return 'Haunch';
+        if (clearSpanVal && approxEqual(seg.width, clearSpanVal, 0.05)) return 'Span';
+        return 'Slab Segment';
+    };
+
+    let currentId = startId;
+    slabSegments.forEach(seg => {
+        rows.push({
+            id: currentId++,
+            start: seg.start,
+            end: seg.end,
+            group: 'TOP_SLAB',
+            label: classifySlabLabel(seg),
+        });
+    });
+
+    slabSegments.forEach(seg => {
+        rows.push({
+            id: currentId++,
+            start: seg.start,
+            end: seg.end,
+            group: 'BOTTOM_SLAB',
+            label: classifySlabLabel(seg),
+        });
+    });
+
+    wallSegments.forEach(seg => {
+        rows.push({
+            id: currentId++,
+            start: seg.start,
+            end: seg.end,
+            group: seg.group,
+            label: seg.label,
+        });
+    });
+
+    const tbody = document.getElementById('member-tbody');
+    if (tbody) tbody.innerHTML = '';
+    rows.forEach(m => {
+        const width = (m.end - m.start).toFixed(4);
+        addMemberRowWithData(m.id, m.start.toFixed(4), m.end.toFixed(4), width, m.group, m.label);
+    });
+
+    // Switch to manual mode so imported geometry is not overwritten
+    setMemberMode('manual');
+    document.getElementById('width-mode').value = 'custom';
+    toggleWidthMode();
+
+    const widthsList = slabSegments.map(s => s.width.toFixed(4)).join(', ');
+    const customWidths = document.getElementById('custom-widths');
+    if (customWidths) customWidths.value = widthsList;
+    updateCustomWidthsFeedback();
+
+    onDataChanged('members');
+    notifyUser('Imported joint coordinates and generated members.', 'success', {
+        hint: 'Review the Members table and diagrams, then adjust groups if needed.'
+    });
+}
+
+function parseJointCoordinates(raw) {
+    const xs = [];
+    const ys = [];
+    const lines = String(raw || '').split(/\r?\n/);
+    lines.forEach(line => {
+        const nums = line.match(/-?\d*\.?\d+(?:[eE][+-]?\d+)?/g);
+        if (!nums || nums.length < 3) return;
+        const vals = nums.map(v => Number.parseFloat(v));
+        let x;
+        let y;
+        if (vals.length >= 4) {
+            x = vals[1];
+            y = vals[2];
+        } else {
+            x = vals[0];
+            y = vals[1];
+        }
+        if (Number.isFinite(x)) xs.push(x);
+        if (Number.isFinite(y)) ys.push(y);
+    });
+    return { xs, ys };
+}
+
+function parseNumericList(raw) {
+    const text = String(raw || '').trim();
+    if (!text) return [];
+    return text
+        .replace(/;/g, ',')
+        .replace(/\s+/g, ',')
+        .split(',')
+        .map(v => v.trim())
+        .filter(v => v.length > 0)
+        .map(v => Number.parseFloat(v))
+        .filter(Number.isFinite);
+}
+
+function parseWallRanges(raw) {
+    const text = String(raw || '').trim();
+    if (!text) return [];
+    return text
+        .replace(/;/g, ',')
+        .split(',')
+        .map(v => v.trim())
+        .filter(v => v.length > 0)
+        .map(pair => {
+            const [a, b] = pair.split('-').map(x => Number.parseFloat(x.trim()));
+            if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+            return [a, b];
+        })
+        .filter(Boolean);
+}
+
+function uniqueSorted(values, tol = 1e-6) {
+    const sorted = [...values].filter(Number.isFinite).sort((a, b) => a - b);
+    const out = [];
+    sorted.forEach(v => {
+        if (!out.length || Math.abs(v - out[out.length - 1]) > tol) out.push(v);
+    });
+    return out;
+}
+
+function roundTo(val, places) {
+    const p = Math.pow(10, places);
+    return Math.round(val * p) / p;
+}
+
+function approxEqual(a, b, tol = 0.01) {
+    return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= tol;
+}
+
+function countByKey(values) {
+    const map = new Map();
+    values.forEach(v => {
+        const key = v.toFixed(3);
+        map.set(key, (map.get(key) || 0) + 1);
+    });
+    return map;
+}
+
+function inferClearSpan(counts) {
+    let best = null;
+    counts.forEach((count, key) => {
+        const val = Number.parseFloat(key);
+        if (!Number.isFinite(val) || val < 1.0) return;
+        if (!best || count > best.count || (count === best.count && val > best.value)) {
+            best = { value: val, count };
+        }
+    });
+    return best ? best.value : null;
+}
+
+function inferMidWall(counts, extWall) {
+    let best = null;
+    counts.forEach((count, key) => {
+        const val = Number.parseFloat(key);
+        if (!Number.isFinite(val) || val <= 0 || val >= 1.0) return;
+        if (approxEqual(val, extWall, 0.02)) return;
+        if (!best || count > best.count) best = { value: val, count };
+    });
+    return best ? best.value : extWall;
+}
+
+function inferHaunch(counts, extWall, midWall, clearSpan) {
+    let best = null;
+    counts.forEach((count, key) => {
+        const val = Number.parseFloat(key);
+        if (!Number.isFinite(val) || val <= 0) return;
+        if (approxEqual(val, extWall, 0.02) || approxEqual(val, midWall, 0.02)) return;
+        if (clearSpan && approxEqual(val, clearSpan, 0.05)) return;
+        if (count >= 2 && (!best || val < best.value)) best = { value: val, count };
+    });
+    return best ? best.value : 0;
 }
 
 function syncStructureConfig() {
@@ -405,6 +1134,7 @@ function collectSettings() {
         project_date: document.getElementById('project-date').value,
         comments: document.getElementById('comments').value,
         structure_type: document.getElementById('structure-type').value,
+        geometry_template: document.getElementById('geometry-template')?.value || 'NONE',
         total_width: parseFloat(document.getElementById('total-width').value),
         reference_axis: document.getElementById('reference-axis').value,
         custom_datum: parseFloat(document.getElementById('custom-datum').value) || 0,
@@ -417,6 +1147,8 @@ function collectSettings() {
         wall_thickness: parseFloat(document.getElementById('wall-thickness').value),
         mid_wall_thickness: parseFloat(document.getElementById('mid-wall-thickness').value) || 0.3,
         haunch_size: parseFloat(document.getElementById('haunch-size').value) || 0.0,
+        custom_breakpoints: parseNumericList(document.getElementById('custom-breakpoints')?.value || ''),
+        custom_wall_ranges: parseWallRanges(document.getElementById('custom-wall-ranges')?.value || ''),
         decimal_precision: parseInt(document.getElementById('decimal-precision').value, 10),
         units: document.getElementById('units').value,
         overhang_policy: document.getElementById('overhang-policy').value,
@@ -1044,11 +1776,13 @@ async function runLongitudinalSweep(options = {}) {
             throw new Error('Missing/invalid inputs:\n- ' + sweepErrors.join('\n- '));
         }
 
+        const movingLoadText = document.getElementById('ml-std-input')?.value || '';
         const body = {
             settings,
             members,
             loads,
             increment: parseFloat(document.getElementById('ml-increment').value) || 0.1,
+            moving_load_text: movingLoadText.trim() ? movingLoadText : '',
         };
 
         const resp = await fetch('/api/smart/longitudinal-critical', {
@@ -1068,10 +1802,23 @@ async function runLongitudinalSweep(options = {}) {
         const inference = data.result.inference || {};
         const vehiclesDetected = (inference.vehicles_from_loads || []).join(', ') || '—';
         const matchedLoads = (inference.matched_load_ids || []).join(', ') || '—';
-        document.getElementById('ml-model-info').innerHTML =
-            `<strong>Model:</strong> span=${model.clear_span}m, cells=${model.num_cells}, total length=${model.total_length}m, increment=${model.sweep_increment}m` +
-            `<br><strong>Detected vehicles from Loads:</strong> ${vehiclesDetected}` +
-            `<br><strong>Matched Load IDs:</strong> ${matchedLoads}`;
+        const movingInfo = inference.moving_load || { used: false };
+        let infoHtml =
+            `<strong>Model:</strong> span=${model.clear_span}m, cells=${model.num_cells}, total length=${model.total_length}m, increment=${model.sweep_increment}m`;
+
+        if (movingInfo.used) {
+            const typeIds = Array.isArray(movingInfo.type_ids) && movingInfo.type_ids.length
+                ? movingInfo.type_ids.join(', ')
+                : '—';
+            infoHtml += `<br><strong>STAAD Moving Load Types:</strong> ${typeIds}`;
+            if (Array.isArray(movingInfo.warnings) && movingInfo.warnings.length) {
+                infoHtml += `<br><strong>STAAD Warnings:</strong> ${movingInfo.warnings.join('; ')}`;
+            }
+        } else {
+            infoHtml += `<br><strong>Detected vehicles from Loads:</strong> ${vehiclesDetected}` +
+                `<br><strong>Matched Load IDs:</strong> ${matchedLoads}`;
+        }
+        document.getElementById('ml-model-info').innerHTML = infoHtml;
 
         const groupLabel = {
             TOP_SLAB: 'Top Slab',
@@ -1536,7 +2283,8 @@ function renderLongitudinalSweepViz() {
         let maxM = 0;
         critical.bmd.forEach(member => {
             member.points.forEach(pt => {
-                if (Math.abs(pt.M) > maxM) maxM = Math.abs(pt.M);
+                if (Math.abs(pt.M_max) > maxM) maxM = Math.abs(pt.M_max);
+                if (Math.abs(pt.M_min) > maxM) maxM = Math.abs(pt.M_min);
             });
         });
 
@@ -1553,81 +2301,113 @@ function renderLongitudinalSweepViz() {
                 const isTopSlab = member.group === 'TOP_SLAB';
                 const isMidWall = member.group === 'INTERMEDIATE_WALL';
 
-                // Filled BMD polygon
-                ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+                // Filled BMD ENVELOPE polygon (Max to Min)
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
                 ctx.strokeStyle = '#38bdf8';
                 ctx.lineWidth = 1.5;
 
                 ctx.beginPath();
-                ctx.moveTo(tx(pts[0].X), ty(pts[0].Y));
+                
+                let peakMaxPt = pts[0];
+                let peakMaxVal = 0;
+                let peakMinPt = pts[0];
+                let peakMinVal = 0;
 
-                let peakPt = pts[0];
-                let peakVal = 0;
-
-                pts.forEach(pt => {
+                // Draw MAX Envelope (forward)
+                pts.forEach((pt, i) => {
                     let dX = 0, dY = 0;
-                    
-                    // Tension side convention:
-                    // Top Slab: +M (sagging) plots Downward (+dY)
-                    // Bottom Slab: +M (sagging) plots Upward (-dY)
-                    // Left Wall: +M (tension inside) plots Rightward (+dX)
-                    // Right Wall: +M (tension inside) plots Leftward (-dX)
                     if (isTopSlab) {
-                        dY = pt.M * scaleM;
+                        dY = pt.M_max * scaleM;
                     } else if (isBottomSlab) {
-                        dY = -pt.M * scaleM; 
+                        dY = -pt.M_max * scaleM; 
                     } else if (isLeftWall) {
-                        dX = pt.M * scaleM; 
+                        dX = pt.M_max * scaleM; 
                     } else if (isRightWall) {
-                        dX = -pt.M * scaleM; 
+                        dX = -pt.M_max * scaleM; 
                     } else if (isMidWall) {
-                        dX = pt.M * scaleM; 
+                        dX = pt.M_max * scaleM; 
                     } else {
-                        // fallback
-                        dY = pt.M * scaleM;
+                        dY = pt.M_max * scaleM;
                     }
 
-                    ctx.lineTo(tx(pt.X) + dX, ty(pt.Y) + dY);
+                    if (i === 0) {
+                        ctx.moveTo(tx(pt.X) + dX, ty(pt.Y) + dY);
+                    } else {
+                        ctx.lineTo(tx(pt.X) + dX, ty(pt.Y) + dY);
+                    }
 
-                    if (Math.abs(pt.M) > Math.abs(peakVal)) {
-                        peakVal = pt.M;
-                        peakPt = pt;
+                    if (Math.abs(pt.M_max) > Math.abs(peakMaxVal)) {
+                        peakMaxVal = pt.M_max;
+                        peakMaxPt = pt;
                     }
                 });
 
-                ctx.lineTo(tx(pts[pts.length - 1].X), ty(pts[pts.length - 1].Y));
+                // Draw MIN Envelope (backward to close polygon)
+                for (let i = pts.length - 1; i >= 0; i--) {
+                    const pt = pts[i];
+                    let dX = 0, dY = 0;
+                    if (isTopSlab) {
+                        dY = pt.M_min * scaleM;
+                    } else if (isBottomSlab) {
+                        dY = -pt.M_min * scaleM; 
+                    } else if (isLeftWall) {
+                        dX = pt.M_min * scaleM; 
+                    } else if (isRightWall) {
+                        dX = -pt.M_min * scaleM; 
+                    } else if (isMidWall) {
+                        dX = pt.M_min * scaleM; 
+                    } else {
+                        dY = pt.M_min * scaleM;
+                    }
+                    ctx.lineTo(tx(pt.X) + dX, ty(pt.Y) + dY);
+
+                    if (Math.abs(pt.M_min) > Math.abs(peakMinVal)) {
+                        peakMinVal = pt.M_min;
+                        peakMinPt = pt;
+                    }
+                }
+                
                 ctx.closePath();
                 ctx.fill();
                 ctx.stroke();
 
-                // ── Peak value label on BMD ──
-                if (Math.abs(peakVal) > 0.01) {
-                    let labelX, labelY;
-                    let dX = 0, dY = 0;
+                // ── Peak value labels on BMD Envelope ──
+                const drawPeakLabel = (peakPt, peakVal, isMax) => {
+                    if (Math.abs(peakVal) > 0.01) {
+                        let labelX, labelY;
+                        let dX = 0, dY = 0;
 
-                    if (isTopSlab) dY = peakVal * scaleM;
-                    else if (isBottomSlab) dY = -peakVal * scaleM;
-                    else if (isLeftWall) dX = peakVal * scaleM;
-                    else if (isRightWall) dX = -peakVal * scaleM;
-                    else if (isMidWall) dX = peakVal * scaleM;
-                    else dY = peakVal * scaleM;
+                        if (isTopSlab) dY = peakVal * scaleM;
+                        else if (isBottomSlab) dY = -peakVal * scaleM;
+                        else if (isLeftWall) dX = peakVal * scaleM;
+                        else if (isRightWall) dX = -peakVal * scaleM;
+                        else if (isMidWall) dX = peakVal * scaleM;
+                        else dY = peakVal * scaleM;
 
-                    labelX = tx(peakPt.X) + dX;
-                    labelY = ty(peakPt.Y) + dY;
+                        labelX = tx(peakPt.X) + dX;
+                        labelY = ty(peakPt.Y) + dY;
 
-                    // Background pill
-                    const label = `${peakVal.toFixed(2)} kN·m`;
-                    ctx.font = 'bold 9px JetBrains Mono, monospace';
-                    const tw = ctx.measureText(label).width + 8;
-                    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-                    ctx.fillRect(labelX - tw / 2, labelY - 7, tw, 14);
-                    ctx.strokeStyle = '#38bdf8';
-                    ctx.lineWidth = 0.8;
-                    ctx.strokeRect(labelX - tw / 2, labelY - 7, tw, 14);
+                        const label = `${peakVal.toFixed(2)} kN·m`;
+                        ctx.font = 'bold 9px JetBrains Mono, monospace';
+                        const tw = ctx.measureText(label).width + 8;
+                        
+                        // Alternate colors for M_max vs M_min for clarity
+                        ctx.fillStyle = isMax ? 'rgba(15, 23, 42, 0.85)' : 'rgba(15, 23, 42, 0.7)';
+                        ctx.fillRect(labelX - tw / 2, labelY - 7, tw, 14);
+                        ctx.strokeStyle = isMax ? '#38bdf8' : '#e2e8f0';
+                        ctx.lineWidth = 0.8;
+                        ctx.strokeRect(labelX - tw / 2, labelY - 7, tw, 14);
 
-                    ctx.fillStyle = '#7dd3fc';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(label, labelX, labelY + 3);
+                        ctx.fillStyle = isMax ? '#7dd3fc' : '#e2e8f0';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(label, labelX, labelY + 3);
+                    }
+                };
+                
+                drawPeakLabel(peakMaxPt, peakMaxVal, true);
+                // Only draw min if it's significantly different to avoid label overlap in static places
+                if (Math.abs(peakMaxVal - peakMinVal) > 5.0) {
+                    drawPeakLabel(peakMinPt, peakMinVal, false);
                 }
             });
         }
@@ -1756,6 +2536,8 @@ function renderLongitudinalSweepViz() {
 
 function validateLongitudinalSweepInputs(settings, members, loads) {
     const errors = [];
+    const movingLoadText = document.getElementById('ml-std-input')?.value || '';
+    const hasMovingLoad = movingLoadText.trim().length > 0;
 
     if (!String(settings.structure_type || '').startsWith('BOX_CULVERT_')) {
         errors.push('Project Settings > Structure Type must be BOX_CULVERT_1/2/3/4CELL.');
@@ -1792,7 +2574,7 @@ function validateLongitudinalSweepInputs(settings, members, loads) {
 
     if (!loads.length) {
         errors.push('Loads tab must contain at least one vehicle load row.');
-    } else {
+    } else if (!hasMovingLoad) {
         const recognized = loads.some(lo => {
             const type = String(lo.load_type || '').toUpperCase();
             const text = `${lo.id || ''} ${lo.notes || ''}`.toUpperCase();
@@ -1806,6 +2588,8 @@ function validateLongitudinalSweepInputs(settings, members, loads) {
         if (!recognized) {
             errors.push('Loads tab needs recognizable vehicle tags (IRC_70R / IRC_CLASS_A / IRC_CLASS_AA / SINGLE_AXLE_BOGIE / DOUBLE_AXLE_BOGIE / single or double bogie keywords).');
         }
+    } else if (hasMovingLoad && !/TYPE\\s+\\d+\\s+LOAD/i.test(movingLoadText)) {
+        errors.push('STAAD Moving Load text must include at least one TYPE n LOAD definition.');
     }
 
     const increment = parseFloat(document.getElementById('ml-increment').value);
@@ -1956,19 +2740,33 @@ async function loadProject(event) {
         // Restore settings
         if (data.settings) {
             const s = data.settings;
-            document.getElementById('project-name').value = s.project_name || '';
-            document.getElementById('bridge-name').value = s.bridge_name || '';
-            document.getElementById('engineer').value = s.engineer || '';
-            document.getElementById('total-width').value = s.total_width || 8.5;
-            document.getElementById('structure-type').value = s.structure_type || 'BRIDGE_DECK';
-            document.getElementById('reference-axis').value = s.reference_axis || 'LEFT_EDGE';
-            document.getElementById('culvert-height').value = s.culvert_height || 0;
-            document.getElementById('fill-depth').value = s.fill_depth || 0;
-            document.getElementById('slab-thickness').value = s.slab_thickness || 0.3;
-            document.getElementById('bottom-slab-thickness').value = s.bottom_slab_thickness || 0.35;
-            document.getElementById('wall-thickness').value = s.wall_thickness || 0.3;
-            document.getElementById('decimal-precision').value = s.decimal_precision || 2;
-            document.getElementById('units').value = s.units || 'm';
+            setInputValueById('project-name', s.project_name || '');
+            setInputValueById('bridge-name', s.bridge_name || '');
+            setInputValueById('engineer', s.engineer || '');
+            setInputValueById('project-date', s.project_date || '');
+            setInputValueById('comments', s.comments || '');
+            setInputValueById('total-width', s.total_width ?? 8.5);
+            setInputValueById('structure-type', s.structure_type || 'BRIDGE_DECK');
+            setInputValueById('geometry-template', s.geometry_template || 'NONE');
+            setInputValueById('reference-axis', s.reference_axis || 'LEFT_EDGE');
+            setInputValueById('custom-datum', s.custom_datum ?? 0);
+            setInputValueById('culvert-height', s.culvert_height ?? 0);
+            setInputValueById('clear-span', s.clear_span ?? 0);
+            setInputValueById('num-cells', s.num_cells ?? 1);
+            setInputValueById('fill-depth', s.fill_depth ?? 0);
+            setInputValueById('slab-thickness', s.slab_thickness ?? 0.3);
+            setInputValueById('bottom-slab-thickness', s.bottom_slab_thickness ?? 0.35);
+            setInputValueById('wall-thickness', s.wall_thickness ?? 0.3);
+            setInputValueById('mid-wall-thickness', s.mid_wall_thickness ?? s.wall_thickness ?? 0.3);
+            setInputValueById('haunch-size', s.haunch_size ?? 0);
+            if (Array.isArray(s.custom_breakpoints) && s.custom_breakpoints.length) {
+                setInputValueById('custom-breakpoints', formatBreakpoints(s.custom_breakpoints));
+            }
+            if (Array.isArray(s.custom_wall_ranges) && s.custom_wall_ranges.length) {
+                setInputValueById('custom-wall-ranges', formatWallRanges(s.custom_wall_ranges));
+            }
+            setInputValueById('decimal-precision', s.decimal_precision ?? 2);
+            setInputValueById('units', s.units || 'm');
         }
         // Restore members
         if (data.members) {
@@ -1984,6 +2782,10 @@ async function loadProject(event) {
                 addLoadRowWithData(lo.id, lo.load_case, lo.load_type, lo.start, lo.end,
                     lo.intensity, lo.intensity_end ?? '', lo.direction, lo.notes || '');
             }
+        }
+        const templateSelect = document.getElementById('geometry-template');
+        if (templateSelect) {
+            renderGeometryTemplateFields(templateSelect.value || 'NONE');
         }
         onDataChanged('settings');
     }
@@ -2254,7 +3056,7 @@ function bindLiveInputHandlers() {
                 ];
                 if (boxInputs.includes(e.target.id)) {
                     const stype = document.getElementById('structure-type').value;
-                    if (stype.startsWith('BOX_CULVERT_')) {
+                    if (stype.startsWith('BOX_CULVERT_') && memberMode === 'auto') {
                         generateBoxCulvertMembers();
                     }
                 }
@@ -2262,6 +3064,10 @@ function bindLiveInputHandlers() {
         });
         settingsPanel.addEventListener('change', (e) => {
             if (e.target && e.target.matches('input, select, textarea')) {
+                if (e.target.id === 'geometry-template') {
+                    handleGeometryTemplateSelection(e.target.value);
+                    return;
+                }
                 onDataChanged('settings');
                 
                 // For dropdowns (structure-type) the change event is key
@@ -2270,9 +3076,10 @@ function bindLiveInputHandlers() {
                     'haunch-size', 'culvert-height', 'slab-thickness', 'bottom-slab-thickness',
                     'structure-type'
                 ];
-                if (boxInputs.includes(e.target.id)) {
+                const boxInputsChangeOnly = ['custom-breakpoints', 'custom-wall-ranges'];
+                if (boxInputs.includes(e.target.id) || boxInputsChangeOnly.includes(e.target.id)) {
                     const stype = document.getElementById('structure-type').value;
-                    if (stype.startsWith('BOX_CULVERT_')) {
+                    if (stype.startsWith('BOX_CULVERT_') && memberMode === 'auto') {
                         generateBoxCulvertMembers();
                     }
                 }
@@ -2311,6 +3118,18 @@ function bindLiveInputHandlers() {
         });
     }
 
+    const mlStaadInput = document.getElementById('ml-std-input');
+    if (mlStaadInput) {
+        mlStaadInput.addEventListener('input', () => {
+            updateRunReadinessPanel();
+            scheduleLiveSweep();
+        });
+        mlStaadInput.addEventListener('change', () => {
+            updateRunReadinessPanel();
+            scheduleLiveSweep();
+        });
+    }
+
     const autoRun = document.getElementById('auto-run-toggle');
     if (autoRun) {
         autoRun.addEventListener('change', () => {
@@ -2321,7 +3140,11 @@ function bindLiveInputHandlers() {
 
 document.addEventListener('DOMContentLoaded', () => {
     // Set today's date
-    document.getElementById('project-date').value = new Date().toISOString().split('T')[0];
+    const projectDateEl = document.getElementById('project-date');
+    if (projectDateEl) projectDateEl.value = new Date().toISOString().split('T')[0];
+    populateGeometryTemplateOptions();
+    const geometryTemplate = document.getElementById('geometry-template');
+    if (geometryTemplate) renderGeometryTemplateFields(geometryTemplate.value);
     bindLiveInputHandlers();
     toggleWidthMode();
 
@@ -3045,4 +3868,177 @@ async function calcSettlement() {
         document.getElementById('st-formula').textContent = r.formula + '\n\n' + r.notes;
         document.getElementById('st-result').style.display = 'block';
     } catch (e) { notifyUser('Error: ' + e.message); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NEW: AUTO DESIGN TAB LOGIC
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function switchAdTab(tabId) {
+    document.querySelectorAll('#tab-auto-design .diagram-content > div').forEach(div => div.style.display = 'none');
+    document.querySelectorAll('#tab-auto-design .diagram-nav .tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+        btn.style.borderBottom = 'none';
+        btn.style.fontWeight = 'normal';
+    });
+    
+    document.getElementById(tabId).style.display = 'block';
+    const activeBtn = Array.from(document.querySelectorAll('#tab-auto-design .diagram-nav .tab-btn'))
+        .find(btn => btn.getAttribute('onclick').includes(tabId));
+    if (activeBtn) {
+        activeBtn.classList.add('active');
+        activeBtn.style.borderBottom = '2px solid var(--primary)';
+        activeBtn.style.fontWeight = '500';
+    }
+}
+
+async function runAutoDesign() {
+    const loadingEl = document.getElementById('ad-loading');
+    const dashboardEl = document.getElementById('ad-dashboard');
+    
+    // Hide previous results, show loader
+    dashboardEl.style.display = 'none';
+    loadingEl.style.display = 'block';
+    clearAppMessages();
+
+    // Collect 18 inputs
+    const payload = {
+        num_cells: parseInt(document.getElementById('ad-cells').value),
+        clear_span: parseFloat(document.getElementById('ad-span').value),
+        clear_height: parseFloat(document.getElementById('ad-height').value),
+        top_slab_thickness: parseFloat(document.getElementById('ad-top').value),
+        bottom_slab_thickness: parseFloat(document.getElementById('ad-bot').value),
+        wall_thickness: parseFloat(document.getElementById('ad-wall').value),
+        mid_wall_thickness: parseFloat(document.getElementById('ad-midwall').value),
+        haunch_size: parseFloat(document.getElementById('ad-haunch').value),
+        fck: parseFloat(document.getElementById('ad-fck').value),
+        fy: parseFloat(document.getElementById('ad-fy').value),
+        clear_cover: parseFloat(document.getElementById('ad-cover').value),
+        fill_depth: parseFloat(document.getElementById('ad-fill').value),
+        wearing_course_thickness: parseFloat(document.getElementById('ad-wc').value),
+        gamma_soil: parseFloat(document.getElementById('ad-gamma').value),
+        friction_angle: parseFloat(document.getElementById('ad-phi').value),
+        allowable_bearing: parseFloat(document.getElementById('ad-sbc').value),
+        water_table_depth: parseFloat(document.getElementById('ad-water').value),
+        culvert_length: parseFloat(document.getElementById('ad-length').value),
+    };
+
+    try {
+        const res = await fetch('/api/smart/auto-design', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        
+        const result = data.result;
+        
+        // Render Raw JSON Report
+        document.getElementById('ad-raw-json').textContent = JSON.stringify(result, null, 2);
+        
+        // Build Traffic Light Summary Cards
+        renderDesignDashboardSummary(result);
+        
+        // Trigger Diagrams in design_diagrams.js
+        if (typeof window.renderAutoDesignDiagrams === 'function') {
+            window.renderAutoDesignDiagrams(result, payload);
+        }
+
+        // Show results
+        loadingEl.style.display = 'none';
+        dashboardEl.style.display = 'block';
+        
+    } catch (e) {
+        loadingEl.style.display = 'none';
+        notifyUser('Auto Design Error: ' + e.message, 'error');
+    }
+}
+
+function renderDesignDashboardSummary(res) {
+    const container = document.getElementById('ad-summary-cards');
+    if (!container) return;
+    
+    // Status color helper
+    const getStatusColor = (status) => status === 'PASS' ? '#10b981' : (status === 'FAIL' ? '#ef4444' : '#f59e0b');
+    const getStatusIcon = (status) => status === 'PASS' ? '✅' : (status === 'FAIL' ? '❌' : '⚠️');
+    
+    let html = '';
+    
+    // Ratios
+    const maxRatioObj = res.design_ratios.critical_ratio || { ratio: 0, check: 'N/A' };
+    const overallStatus = maxRatioObj.ratio > 1.0 ? 'FAIL' : 'PASS';
+    
+    html += `
+        <div style="background: var(--surface); border: 2px solid ${getStatusColor(overallStatus)}; border-radius: 8px; padding: 16px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold; color: ${getStatusColor(overallStatus)};">${getStatusIcon(overallStatus)}</div>
+            <div style="font-size: 0.85rem; opacity: 0.7; margin-top: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Overall Status</div>
+            <div style="font-size: 1.1rem; font-weight: 600; margin-top: 4px;">Max Ratio: ${maxRatioObj.ratio.toFixed(2)}</div>
+            <div style="font-size: 0.75rem; opacity: 0.6; margin-top: 2px;">Critical: ${maxRatioObj.check}</div>
+        </div>
+    `;
+    
+    // Bearing Check
+    const bearing = res.checks.bearing_pressure;
+    if (bearing) {
+        const bearingRatio = bearing.utilization;
+        const bStatus = bearingRatio <= 1 ? 'PASS' : 'FAIL';
+        html += `
+            <div style="background: var(--surface); border: 1px solid var(--border); border-left: 4px solid ${getStatusColor(bStatus)}; border-radius: 8px; padding: 16px;">
+                <div style="font-size: 0.85rem; opacity: 0.7; font-weight: 600; text-transform: uppercase;">Bearing Pressure</div>
+                <div style="font-size: 1.25rem; font-weight: bold; margin-top: 8px;">${bearing.max_pressure.toFixed(1)} <span style="font-size: 0.85rem; font-weight: normal; opacity: 0.7;">kN/m²</span></div>
+                <div style="font-size: 0.75rem; opacity: 0.6; margin-top: 4px;">Allowable: ${bearing.allowable} kN/m²</div>
+            </div>
+        `;
+    }
+    
+    // Uplift Check
+    const uplift = res.checks.uplift;
+    if (uplift) {
+        html += `
+            <div style="background: var(--surface); border: 1px solid var(--border); border-left: 4px solid ${getStatusColor(uplift.status)}; border-radius: 8px; padding: 16px;">
+                <div style="font-size: 0.85rem; opacity: 0.7; font-weight: 600; text-transform: uppercase;">Uplift FOS</div>
+                <div style="font-size: 1.25rem; font-weight: bold; margin-top: 8px;">${(uplift.fos_uplift === 999) ? 'No Uplift' : uplift.fos_uplift.toFixed(2)}</div>
+                <div style="font-size: 0.75rem; opacity: 0.6; margin-top: 4px;">Required: 1.10</div>
+            </div>
+        `;
+    }
+    
+    // Crack Width (Max)
+    if (res.checks.crack_width) {
+        let maxCrack = 0;
+        let crackStatus = 'PASS';
+        for (const [el, data] of Object.entries(res.checks.crack_width)) {
+            if (data.status === 'FAIL') crackStatus = 'FAIL';
+            if (data.wk > maxCrack) maxCrack = data.wk;
+        }
+        
+        html += `
+            <div style="background: var(--surface); border: 1px solid var(--border); border-left: 4px solid ${getStatusColor(crackStatus)}; border-radius: 8px; padding: 16px;">
+                <div style="font-size: 0.85rem; opacity: 0.7; font-weight: 600; text-transform: uppercase;">Max Crack Width</div>
+                <div style="font-size: 1.25rem; font-weight: bold; margin-top: 8px;">${maxCrack.toFixed(3)} <span style="font-size: 0.85rem; font-weight: normal; opacity: 0.7;">mm</span></div>
+                <div style="font-size: 0.75rem; opacity: 0.6; margin-top: 4px;">For ${res.checks.crack_width.outer_walls.exposure_condition} exposure</div>
+            </div>
+        `;
+    }
+    
+    // Quantities
+    if (res.quantities) {
+        html += `
+            <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                <div>
+                    <div style="font-size: 0.85rem; opacity: 0.7; font-weight: 600; text-transform: uppercase;">Quantity Estimates</div>
+                    <div style="font-size: 0.8rem; opacity: 0.5; margin-top: 2px;">For ${res.model.total_length}m length</div>
+                </div>
+                <div style="display: flex; gap: 24px;">
+                    <div><span style="font-size: 1.2rem; font-weight: bold;">${res.quantities.total_concrete.toFixed(1)}</span> <span style="opacity: 0.6; font-size: 0.85rem;">m³ Concrete</span></div>
+                    <div><span style="font-size: 1.2rem; font-weight: bold;">${res.quantities.total_steel_kg.toFixed(0)}</span> <span style="opacity: 0.6; font-size: 0.85rem;">kg Steel</span></div>
+                    <div><span style="font-size: 1.2rem; font-weight: bold;">${res.quantities.total_formwork.toFixed(1)}</span> <span style="opacity: 0.6; font-size: 0.85rem;">m² Formwork</span></div>
+                </div>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
 }
