@@ -34,7 +34,20 @@ from app.core.validation import validate_all
 from app.core.staad_export import generate_staad_text
 from app.core.excel_export import generate_excel
 
-app = Flask(__name__)
+import os
+import sys
+
+# Handle resource paths for PyInstaller bundle
+if getattr(sys, 'frozen', False):
+    # If the application is run as a bundle, the PyInstaller bootloader
+    # extends the sys module by a flag frozen=True and sets the app 
+    # path into variable _MEIPASS.
+    base_path = sys._MEIPASS
+    template_folder = os.path.join(base_path, 'app', 'templates')
+    static_folder = os.path.join(base_path, 'app', 'static')
+    app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
+else:
+    app = Flask(__name__)
 
 
 @app.route("/")
