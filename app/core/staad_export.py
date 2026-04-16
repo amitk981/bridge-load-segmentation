@@ -78,7 +78,7 @@ def generate_staad_text(
         "CUSTOM": "None",
     }
 
-    for case_id, results in sorted(by_case.items()):
+    for case_id, results in by_case.items():
         load_num = load_case_map[case_id]
 
         # Determine load type from first result in case
@@ -147,8 +147,16 @@ def generate_load_combinations(
 
 
 def _build_load_case_map(case_ids) -> dict[str, int]:
-    """Map load case IDs to sequential STAAD load numbers starting at 1."""
-    return {case_id: i + 1 for i, case_id in enumerate(sorted(case_ids))}
+    """Map load case IDs to sequential STAAD load numbers starting at 1.
+
+    Preserves the original insertion order so that LOAD numbers
+    match the sequence in which the user added loads.
+    """
+    seen: dict[str, int] = {}
+    for case_id in case_ids:
+        if case_id not in seen:
+            seen[case_id] = len(seen) + 1
+    return seen
 
 
 def _fmt(value: float, precision: int) -> str:
